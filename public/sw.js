@@ -17,7 +17,7 @@
  *   → bypassCacheUntil (in-memory + Cache API für SW-Restart-Robustheit)
  */
 
-const APP_RELEASE        = '2.71.0';
+const APP_RELEASE        = '2.74.0';
 const APP_BUILD_REVISION = '__YUVOMI_BUILD_REVISION__';
 const CACHE_RELEASE      = `${APP_RELEASE}-${APP_BUILD_REVISION}`;
 const SHELL_CACHE        = `yuvomi-shell-${CACHE_RELEASE}`;
@@ -119,6 +119,7 @@ const APP_SHELL = [
   '/utils/contact-name.js',
   '/utils/contrast.js',
   '/utils/countdown.js',
+  '/utils/dashboard-event-limit.js',
   '/utils/dashboard-layout-hint.js',
   '/utils/dashboard-widgets.js',
   '/utils/date-status.js',
@@ -138,9 +139,12 @@ const APP_SHELL = [
   '/utils/extension-widgets.js',
   '/utils/fab.js',
   '/utils/flip.js',
+  '/utils/list-motion.js',
+  '/utils/content-swap.js',
   '/utils/filter-sheet.js',
   '/utils/folder-upload.js',
   '/utils/folder-tree.js',
+  '/utils/friendly-error.js',
   '/utils/health-activity.js',
   '/utils/health-cycle.js',
   '/utils/health-fasting.js',
@@ -158,19 +162,23 @@ const APP_SHELL = [
   '/utils/health-tabs.js',
   '/utils/health-vitals.js',
   '/utils/help.js',
+  '/utils/household-zone-hint.js',
   '/utils/household.js',
   '/utils/html-escape.js',
   '/utils/html.js',
   '/utils/ingredient-row.js',
+  '/utils/initials.js',
   '/utils/inventory-warranty.js',
   '/utils/kitchen-tabs.js',
   '/utils/kitchen-transfer.js',
+  '/utils/korean-particles.js',
   '/utils/leave-guard.js',
   '/utils/live-feed.js',
   '/utils/markdown-checklist.js',
   '/utils/markdown-toolbar.js',
   '/utils/master-detail.js',
   '/utils/meal-types.js',
+  '/utils/member-order.js',
   '/utils/mentions.js',
   '/utils/module-accent.js',
   '/utils/module-access.js',
@@ -188,6 +196,7 @@ const APP_SHELL = [
   '/utils/page-search.js',
   '/utils/search-sections.js',
   '/utils/palette-combobox.js',
+  '/utils/period-stepper.js',
   '/utils/pantry-locations.js',
   '/utils/pantry-status.js',
   '/utils/pantry-units.js',
@@ -199,15 +208,18 @@ const APP_SHELL = [
   '/utils/quick-link-url.js',
   '/utils/pwa-install.js',
   '/utils/recipe-meal-types.js',
+  '/utils/read-row.js',
   '/utils/recipe-thumb.js',
   '/utils/recipe-to-meal.js',
   '/utils/recurrence-scope.js',
   '/utils/reminder-offset.js',
   '/utils/reward-goal.js',
+  '/utils/router-navigate.js',
   '/utils/roving-toolbar.js',
   '/utils/row-action.js',
   '/utils/schedule-tabs.js',
   '/utils/schedule-reminder-offset.js',
+  '/utils/screensaver-idle.js',
   '/utils/scroll-restore.js',
   '/utils/seal-pair.js',
   '/utils/segment-indicator.js',
@@ -224,6 +236,8 @@ const APP_SHELL = [
   '/utils/toast-show.js',
   '/utils/toast-surface.js',
   '/utils/today-sheet.js',
+  '/utils/unknown-route.js',
+  '/utils/page-mount.js',
   '/utils/ux.js',
   '/utils/vcard.js',
   '/utils/view-transition.js',
@@ -232,6 +246,7 @@ const APP_SHELL = [
   '/utils/wall-mode.js',
   '/utils/web-share.js',
   '/utils/week-strip.js',
+  '/utils/overlap-lanes.js',
   '/offline.html',
   // offline.html laedt theme-init.js, damit die Huelle dieselbe Farbwelt
   // trifft wie die App (gespeicherter Wunsch schlaegt Systemeinstellung).
@@ -314,6 +329,7 @@ const PAGE_MODULES = [
   // Der Bildzuschnitt kommt per dynamischem import() aus mehreren Modulen
   // (Avatare, Geburtstage, Vorrat, Rezepte, Haushaltshilfe, Schnellzugriff).
   // Der Precache-Guard las dynamische Importe bis dahin nicht.
+  '/utils/auth-ui.js',
   '/utils/avatar-crop.js',
   '/utils/lucide-icons.js',
   '/utils/sortable.js',

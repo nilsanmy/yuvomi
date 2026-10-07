@@ -436,6 +436,39 @@ test('FLIP haengt am Neuaufbau: vorher messen, nach dem setHtml abspielen - nur 
     'gemessen wird, bevor der Modus des letzten Aufbaus ueberschrieben ist - sonst gleitet auch das Betreten des Modus');
 });
 
+// R16 (Bewegung): beim Betreten/Verlassen des Anpassen-Modus sprang das Raster
+// (Gruss bricht um, Ablage schiebt sich davor - gemessen y 486 -> 868). Die
+// Kacheln bleiben ruhig (Test darueber), aber das Raster gleitet ALS GANZES.
+test('Anpassen-Modus betreten/verlassen: das Raster gleitet als Ganzes, ohne Feder, nicht unter reduzierter Bewegung', async () => {
+  const calls = [];
+  const grid = {
+    top: 868,
+    getBoundingClientRect: () => ({ top: grid.top }),
+    animate: (keyframes, timing) => { calls.push({ keyframes, timing }); return {}; },
+  };
+  const root = { querySelector: (sel) => (sel === '#dashboard-widget-grid' ? grid : null) };
+  __test.playGridShift(root, 486, { reduced: false });
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0].keyframes, [{ transform: 'translateY(-382px)' }, { transform: 'none' }], 'von der alten Oberkante an die neue');
+  assert.equal(calls[0].timing.duration, 250, '--duration-lg');
+  assert.equal(calls[0].timing.easing, 'ease-out', 'Rueckfall der --ease-out; keine Feder ueber hunderte Pixel');
+  assert.equal(calls[0].timing.fill, undefined, 'kein fill: der Endzustand steht vor der Animation');
+
+  __test.playGridShift(root, 486, { reduced: true });
+  __test.playGridShift(root, null, { reduced: false });
+  __test.playGridShift(root, 868.4, { reduced: false });
+  __test.playGridShift({ querySelector: () => ({ getBoundingClientRect: () => ({ top: 0 }) }) }, 100, { reduced: false });
+  assert.equal(calls.length, 1, 'reduzierte Bewegung, kein Vorher-Wert, kein Versatz, kein animate: nichts');
+
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../public/pages/dashboard.js', import.meta.url), 'utf8');
+  const body = src.match(/function rebuildDashboard\(cfg\) \{[\s\S]*?\n {2}\}\n/)?.[0] ?? '';
+  const capture = body.search(/const gridTopBefore = modeChanged\s*\?/);
+  const rebuild = body.search(/setHtml\(shell, `\s*<section class="dashboard-masthead/);
+  const play = body.search(/playGridShift\(shell, gridTopBefore\)/);
+  assert.ok(capture > -1 && capture < rebuild && rebuild < play, 'nur beim Moduswechsel: vorher messen, neu bauen, gleiten');
+});
+
 test('Anpassen-Modus: das Raster traegt eine Kante, keine Toenung ueber allen Kacheln', async () => {
   const { readFileSync } = await import('node:fs');
   const { eachRule } = await import('./css-rules.js');
@@ -474,6 +507,33 @@ test('die Groessennamen der Uebersicht sagen die Form, in jeder Sprache verschie
     const locale = file.slice(0, -5);
     const names = WIDGET_SIZE_PRESETS.map((p) => label(locale, p.labelKey).replace(/\s*\(.*\)$/, ''));
     assert.equal(new Set(names).size, names.length, `${locale}: zwei Groessen heissen gleich (${names.join(', ')})`);
+  }
+});
+
+// „Standard (2×2)" hiess die groesste der vier Formen - aber keine Kachel
+// beginnt in ihr (#1723). Ein Name, der einen Ausgangswert behauptet, den es
+// nicht gibt, ist dieselbe Sorte Fehler wie „Schmal" fuer zwei Spalten.
+test('2×2 heisst nach seiner Form, nicht „Standard" - keine Kachel beginnt in dieser Groesse', async () => {
+  const { readFileSync, readdirSync } = await import('node:fs');
+  const { WIDGET_SIZE_PRESETS, WIDGET_IDS, defaultWidgetSize } = await import('../public/utils/dashboard-widgets.js');
+  const square = WIDGET_SIZE_PRESETS.find((p) => p.value === '2x2');
+  assert.ok(square, '2x2 ist keine waehlbare Groesse mehr - der Test prueft dann nichts');
+  // Die Voraussetzung des Namens, gemessen statt behauptet: sobald ein Widget
+  // wieder in 2x2 beginnt, ist diese Zeile rot und der Name neu zu entscheiden.
+  assert.ok(WIDGET_IDS.length > 5, 'zu wenige Widgets gelesen');
+  assert.deepEqual(WIDGET_IDS.filter((id) => defaultWidgetSize(id) === '2x2'), [],
+    'ein Widget beginnt in 2x2');
+  assert.doesNotMatch(square.labelKey, /standard|default/i, 'der Schluessel nennt 2x2 den Ausgangswert');
+  const dir = new URL('../public/locales/', import.meta.url);
+  const label = (file) => square.labelKey.split('.').reduce((o, k) => o?.[k],
+    JSON.parse(readFileSync(new URL(file, dir), 'utf8')));
+  assert.equal(label('de.json'), 'Quadrat (2×2)');
+  assert.equal(label('en.json'), 'Square (2×2)');
+  for (const file of readdirSync(dir).filter((f) => f.endsWith('.json'))) {
+    const { dashboard } = JSON.parse(readFileSync(new URL(file, dir), 'utf8'));
+    assert.equal(dashboard.widgetSizeStandard, undefined, `${file}: der alte Name ist als toter Schluessel geblieben`);
+    // Das Malzeichen und die Ziffern der Sprache bleiben, wie die Nachbarn sie fuehren.
+    assert.match(label(file), /\s\((2×2|۲×۲)\)$/u, `${file}: die Massangabe fehlt (${label(file)})`);
   }
 });
 
@@ -675,3 +735,46 @@ test('#1452: ob der Check-in von heute ist, entscheidet die Haushaltszone', () =
     assert.equal(row.sortKey, '00:01');
   });
 }));
+
+// --------------------------------------------------------
+// #1607: die Budget-Kachel fuehrt auf die Monatsuebersicht
+// --------------------------------------------------------
+// Das Budget merkt sich seinen zuletzt offenen Reiter (Modul-Singleton). Wer
+// zuletzt in der Statistik stand, landete ueber „Eintrag hinzufuegen" der
+// Kachel dort - auf einem Reiter ohne Anlegen. Die Kachel zeigt Einnahmen,
+// Ausgaben und Saldo des Monats, also nennt jeder ihrer Wege diesen Reiter.
+const routesOf = (html) => [...html.matchAll(/data-route="([^"]*)"/g)].map((m) => m[1]);
+
+test('#1607: jeder Weg aus der Budget-Kachel nennt den Reiter der Monatsuebersicht', () => {
+  const leer = routesOf(__test.renderBudgetWidget({ entryCount: 0 }, 'EUR'));
+  assert.equal(leer.length, 2, `Reichweite: Kopf-Link und „Eintrag hinzufuegen", bekam ${leer}`);
+  assert.deepEqual([...new Set(leer)], ['/budget?tab=budget']);
+
+  const gefuellt = routesOf(__test.renderBudgetWidget({ income: 100, expenses: 40, balance: 60, entryCount: 2 }, 'EUR'));
+  assert.ok(gefuellt.length >= 1, 'Reichweite: der Kopf-Link');
+  assert.deepEqual([...new Set(gefuellt)], ['/budget?tab=budget']);
+});
+
+test('#1607: die Kennzahl-Kachel „Monatssaldo" nennt denselben Reiter', () => {
+  const prevWindow = global.window;
+  global.window = { yuvomi: { isModuleDisabled: () => false } };
+  try {
+    // Zwei Kacheln, sonst ist es keine Reihe (selectMetricTiles).
+    const tile = __test.selectMetricTiles({
+      budget: { income: 100, expenses: 40, balance: 60, entryCount: 2 },
+      housekeeping: { configured: true, present: false, visitsThisMonth: 4 },
+    }, 'EUR').find((entry) => entry.id === 'budget');
+    assert.ok(tile, 'Reichweite: die Budget-Kachel steht in der Reihe');
+    assert.equal(tile.route, '/budget?tab=budget');
+  } finally {
+    global.window = prevWindow;
+  }
+});
+
+test('#1607: der Reiter aus der Kachel ist einer, den das Budget kennt', async () => {
+  globalThis.HTMLElement = globalThis.HTMLElement ?? class {};
+  globalThis.customElements = globalThis.customElements ?? { define() {}, get() {} };
+  globalThis.localStorage = globalThis.localStorage ?? { getItem: () => null, setItem() {}, removeItem() {} };
+  const { __test: budget } = await import('../public/pages/budget.js');
+  assert.equal(budget.tabFromQuery('?tab=budget'), 'budget');
+});

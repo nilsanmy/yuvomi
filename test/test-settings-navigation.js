@@ -973,6 +973,9 @@ test('die Suche findet einzelne Optionen, nicht nur Blaetter', async () => {
   assert.ok(optionOn('mealie', 'modules-kitchen'), 'Produktnamen stehen als terms im Index');
   assert.ok(optionOn('Zwei-Faktor', 'personal-account'));
   assert.ok(optionOn('Wand', 'personal-appearance'), 'Wand findet den Wand-Modus, nicht nur die Wandtabletts');
+  // #1665-Review: ein Mitglied, das "Bildschirmschoner" sucht, landet bei der
+  // Wartezeit unter Darstellung - nicht im Immich-Blatt, wo sie nicht steht.
+  assert.ok(optionOn('Bildschirmschoner', 'personal-appearance', { role: 'member' }), 'Bildschirmschoner findet die Wartezeit');
   // Diakritika und Gross-/Kleinschreibung zaehlen nicht.
   assert.ok(optionOn('wahrung', 'personal-appearance'), 'waehrung ohne Umlaut findet Waehrung');
 
@@ -1250,6 +1253,114 @@ test('mobile navigation fills unavailable favorites from defaults and remaining 
     ),
     ['tasks', 'kitchen'],
   );
+});
+
+// #1723: die Laenderliste stand in jeder UI-Sprache auf Englisch, weil die
+// Seite den Namen des Servers druckte. Die Tests importieren dynamisch, damit
+// ein fehlender Export EINEN Fall rot macht und nicht die ganze Datei.
+test('#1723: holiday countries are named and sorted in the UI language', async () => {
+  const { localizeHolidayCountries } = await import('../public/settings/pages/modules-calendar.js');
+  assert.equal(typeof localizeHolidayCountries, 'function', 'localizeHolidayCountries fehlt');
+  // So kommt die Liste vom Server: englische Namen, englisch sortiert.
+  const vomServer = [
+    { isoCode: 'AT', name: 'Austria' },
+    { isoCode: 'DE', name: 'Germany' },
+    { isoCode: 'ES', name: 'Spain' },
+    { isoCode: 'US', name: 'United States', schoolHolidays: false },
+  ];
+  const kopie = structuredClone(vomServer);
+
+  const de = localizeHolidayCountries(vomServer, 'de');
+  assert.deepEqual(de.map((c) => c.name), ['Deutschland', 'Österreich', 'Spanien', 'Vereinigte Staaten'],
+    'deutsche Namen, deutsch sortiert (Ö bei O, nicht hinter Z)');
+  assert.deepEqual(de.map((c) => c.isoCode), ['DE', 'AT', 'ES', 'US']);
+  assert.equal(de.find((c) => c.isoCode === 'US').schoolHolidays, false, 'das Schulferien-Flag reist mit');
+  assert.deepEqual(vomServer, kopie, 'die Eingabe bleibt, wie sie war');
+
+  assert.deepEqual(localizeHolidayCountries(vomServer, 'fr').map((c) => c.name),
+    ['Allemagne', 'Autriche', 'Espagne', 'États-Unis']);
+  assert.deepEqual(localizeHolidayCountries(vomServer, 'en').map((c) => c.isoCode), ['AT', 'DE', 'ES', 'US']);
+
+  // Ohne Angabe gilt die UI-Sprache (getLocale), nicht die Region des Haushalts.
+  const before = globalThis.__locale;
+  try {
+    globalThis.__locale = 'sv';
+    assert.equal(localizeHolidayCountries(vomServer).find((c) => c.isoCode === 'DE').name, 'Tyskland');
+  } finally {
+    globalThis.__locale = before;
+  }
+});
+
+test('#1723: a country Intl cannot name keeps the name the server sent', async () => {
+  const { localizeHolidayCountries } = await import('../public/settings/pages/modules-calendar.js');
+  assert.equal(typeof localizeHolidayCountries, 'function', 'localizeHolidayCountries fehlt');
+  const liste = [
+    { isoCode: 'ZZZZ', name: 'Zzyzx' },           // kein gueltiger Regionscode: Intl wirft
+    { isoCode: 'QQ', name: 'Nowhere' },           // gueltige Form, unbekanntes Land
+    { isoCode: '', name: 'Blank' },
+    { isoCode: 'DE', name: 'Germany' },
+  ];
+  assert.deepEqual(localizeHolidayCountries(liste, 'de').map((c) => c.name),
+    ['Blank', 'Deutschland', 'Nowhere', 'Zzyzx'], 'der Servername bleibt, statt des Codes oder einer Luecke');
+  // Eine Sprache, die Intl nicht annimmt, kostet die Uebersetzung, nicht die Liste.
+  assert.deepEqual(localizeHolidayCountries(liste, 'not a locale').map((c) => c.name).sort(),
+    ['Blank', 'Germany', 'Nowhere', 'Zzyzx']);
+  assert.deepEqual(localizeHolidayCountries(null, 'de'), []);
+});
+
+// Gefahren wird der echte Abruf der Seite (loadSubdivisions) gegen den
+// API-Stub des Loaders: welche Adresse er fragt und in welcher Reihenfolge die
+// Optionen im Auswahlfeld landen.
+test('#1723: holiday regions are asked for in the UI language and sorted in it', async () => {
+  const { loadSubdivisions, sortHolidayEntries } = await import('../public/settings/pages/modules-calendar.js');
+  assert.equal(typeof loadSubdivisions, 'function', 'loadSubdivisions ist nicht exportiert');
+  assert.equal(typeof sortHolidayEntries, 'function', 'sortHolidayEntries fehlt');
+
+  // Schwedisch stellt Ö ans Ende des Alphabets, Deutsch zu O.
+  const regionen = [{ isoCode: 'A', name: 'Örebro' }, { isoCode: 'B', name: 'Uppsala' }, { isoCode: 'C', name: 'Skåne' }];
+  assert.deepEqual(sortHolidayEntries(regionen, 'sv').map((r) => r.name), ['Skåne', 'Uppsala', 'Örebro']);
+  assert.deepEqual(sortHolidayEntries(regionen, 'de').map((r) => r.name), ['Örebro', 'Skåne', 'Uppsala']);
+  assert.deepEqual(sortHolidayEntries(regionen, 'not a locale').length, 3, 'eine unbrauchbare Sprache kostet nicht die Liste');
+
+  const saved = { document: globalThis.document, api: globalThis.__apiStub, locale: globalThis.__locale };
+  const fakeSelect = () => ({
+    options: [],
+    disabled: false,
+    replaceChildren(...nodes) { this.options = [...nodes]; },
+    appendChild(node) { this.options.push(node); },
+  });
+  const gefragt = [];
+  globalThis.document = { createElement: () => ({}) };
+  globalThis.__apiStub = { get: async (url) => { gefragt.push(url); return { data: regionen }; } };
+  try {
+    for (const [locale, country, erwartet] of [
+      ['sv', 'SE', ['Skåne', 'Uppsala', 'Örebro']],
+      ['de', 'SE', ['Örebro', 'Skåne', 'Uppsala']],
+      ['pt-BR', 'PT', ['Örebro', 'Skåne', 'Uppsala']],
+    ]) {
+      globalThis.__locale = locale;
+      const select = fakeSelect();
+      const result = await loadSubdivisions(select, { value: country }, country, 'B', { latestRequestId: 0 });
+      assert.equal(gefragt.at(-1), `/preferences/holidays/subdivisions/${country}?lang=${locale}`);
+      assert.deepEqual(select.options.slice(1).map((o) => o.textContent), erwartet, `${locale}: Reihenfolge im Auswahlfeld`);
+      assert.equal(select.options.find((o) => o.value === 'B').selected, true, 'die gespeicherte Region bleibt gewaehlt');
+      assert.deepEqual(result, { selectedResolved: true });
+    }
+  } finally {
+    globalThis.document = saved.document;
+    globalThis.__apiStub = saved.api;
+    globalThis.__locale = saved.locale;
+  }
+});
+
+// Die Funktionen oben helfen nur, wenn die Seite sie auch ruft - ein Export
+// ohne Aufrufer besteht jeden Test darueber.
+test('#1723: the holiday form builds the country dropdown through localizeHolidayCountries', async () => {
+  const source = await readFile(new URL('../public/settings/pages/modules-calendar.js', import.meta.url), 'utf8');
+  const initial = source.slice(source.indexOf('const countriesResult = await runHolidayDiscovery('));
+  assert.match(initial, /const countries = localizeHolidayCountries\(/, 'die Laenderliste laeuft durch localizeHolidayCountries');
+  assert.match(initial, /countriesData = countries;\s*appendOptions\(\s*countrySelect,\s*countries,/,
+    'und genau diese Liste fuellt das Auswahlfeld und die Schulferien-Pruefung');
 });
 
 test('stale holiday subdivision responses are rejected', () => {
@@ -2251,7 +2362,7 @@ test('Standard-Erinnerungsliste: eine gescheiterte Abfrage ist ein Fehler mit Au
 
 const PRE_R10_LEAVES = Object.freeze({
   '/settings/personal/account': { id: 'personal-account', adminOnly: false, labelKey: 'settings.pageAccount', options: ['settings.displayNameLabel', 'settings.colorLabel', 'settings.contactDetailsLegend', 'settings.changePassword', 'settings.twoFactorTitle', 'settings.otherSessionsTitle', 'settings.oidcLinkTitle'] },
-  '/settings/personal/appearance': { id: 'personal-appearance', adminOnly: false, labelKey: 'settings.pageAppearance', options: ['settings.sectionDesign', 'settings.wallModeLabel', 'settings.localeLabel', 'settings.dataLanguageLabel', 'settings.regionLabel', 'settings.currencyLabel', 'settings.timezoneLabel', 'settings.dateFormatLabel', 'settings.timeFormatLabel'] },
+  '/settings/personal/appearance': { id: 'personal-appearance', adminOnly: false, labelKey: 'settings.pageAppearance', options: ['settings.sectionDesign', 'settings.wallModeLabel', 'settings.screensaverIdleLabel', 'settings.localeLabel', 'settings.dataLanguageLabel', 'settings.regionLabel', 'settings.currencyLabel', 'settings.timezoneLabel', 'settings.dateFormatLabel', 'settings.timeFormatLabel'] },
   '/settings/personal/device': { id: 'personal-device', adminOnly: false, labelKey: 'settings.pageDevice', options: ['settings.pwaInstallTitle'] },
   '/settings/personal/notifications': { id: 'personal-notifications', adminOnly: false, labelKey: 'settings.pageNotifications', options: ['settings.pushToggleTitle', 'settings.notificationChannelsTitle'] },
   '/settings/personal/calendar': { id: 'personal-calendar', adminOnly: false, labelKey: 'settings.pageCalendarDefaults', options: ['settings.calendarAssignMeLabel', 'settings.calendarDefaultTargetLabel', 'settings.calendarDefaultRemindersLabel'] },
@@ -2843,7 +2954,9 @@ test('R14: Familie legt im Blatt-Dialog an, Fuss [Abbrechen][Primaer], Zeilen mi
   assert.match(src, /content: addInviteFormHtml\(\)/);
   assert.match(src, /<ul class="settings-members row-divided" id="members-list">/, 'Haarlinien zwischen den Mitgliedern');
   assert.doesNotMatch(src, /btn--primary settings-add-btn/, 'kein violetter Balken ueber die volle Breite');
-  assert.match(src, /t\('common\.deleteNamed', \{ name: u\.display_name \}\)/, 'der Loeschknopf nennt sein Objekt');
+  // Seit #1381 heisst der Knopf "entfernen", nicht "loeschen": ein Konto mit
+  // Spuren in geteilten Daten wird deaktiviert. Sein Objekt nennt er weiter.
+  assert.match(src, /t\('settings\.removeMemberNamed', \{ name: u\.display_name \}\)/, 'der Entfernen-Knopf nennt sein Objekt');
   assert.match(src, /t\('common\.editNamed', \{ name: u\.display_name \}\)/);
   const editFoot = src.slice(src.indexOf('id="edit-member-error"'), src.indexOf("settings.saveMember')}</button>"));
   assert.match(editFoot, /modal-panel__footer/, 'auch Bearbeiten traegt den Kanon-Fuss');
@@ -2879,4 +2992,219 @@ test('R14: "Meine Einstellungen" des Schichtplans stehen im Modulblatt, auch fue
     'der Abschnitt laedt die Seite, die z14 aus der Auswertung geholt hat');
   const src = await readFile(new URL('../public/settings/pages/personal-schedule.js', import.meta.url), 'utf8');
   assert.match(src, /export async function render\(container, \{ user \}\)/, 'die Shell ruft render() des Moduls');
+});
+
+// #1607: ein Mitglied mit `health: none` sah das Gesundheitsblatt in den
+// Einstellungen offen und bedienbar, daneben "Kein Zugriff" - der Server wies
+// jeden Aufruf ab, die Seitenleiste zeigte das Modul laengst nicht mehr. Die
+// Einstellungen fragten nur nach der Rolle (adminOnly), nie nach dem
+// Modulrecht. Alle Wege in ein Blatt (Liste, Adresse, Suche) laufen durch
+// sheetVisible(), also wird dort gemessen - an den drei Ausgaengen, nicht am
+// Quelltext.
+test('#1607: ein Modulblatt folgt dem Modulrecht - none blendet aus, read bleibt', async () => {
+  const { settingsSheetsForDomain } = await import('../public/settings/registry.js');
+  const { setPermissions, clearPermissions } = await import('../public/permissions.js');
+  const member = { role: 'member' };
+  const translate = (key) => key;
+  const sheetIds = () => settingsSheetsForDomain('modules', member).map((leaf) => leaf.id);
+  const healthPath = SETTINGS_LEAVES.find((leaf) => leaf.id === 'module-health').path;
+  const searchHits = () => {
+    const found = searchSettings('nav.health', { user: member, translate });
+    return [...found.leaves, ...found.sections.map((hit) => hit.leaf), ...found.options.map((hit) => hit.leaf)]
+      .filter((leaf) => leaf.id === 'module-health').length;
+  };
+
+  try {
+    // Gegenprobe zuerst: ohne Einschraenkung ist alles da. Faellt das schon
+    // hier, misst der Rest das Fehlen von etwas, das es nie gab.
+    clearPermissions();
+    assert.ok(sheetIds().includes('module-health'));
+    assert.equal(findSettingsLeaf(healthPath, member)?.id, 'module-health');
+    assert.ok(searchHits() > 0, 'die Suche findet das Gesundheitsblatt gar nicht - die Sonde ist blind');
+
+    setPermissions({ admin: false, modules: { health: 'none' } });
+    assert.ok(!sheetIds().includes('module-health'), 'die Blattliste fuehrt Gesundheit trotz none');
+    assert.equal(findSettingsLeaf(healthPath, member), null, 'die Adresse oeffnet das Blatt trotz none');
+    assert.equal(searchHits(), 0, 'die Suche fuehrt trotz none ins Gesundheitsblatt');
+    assert.ok(sheetIds().includes('module-tasks'), 'none fuer EIN Modul nimmt die anderen Blaetter nicht mit');
+
+    // Nur lesen: das Blatt bleibt (Zustand bleibt als Zeichen).
+    setPermissions({ admin: false, modules: { health: 'read' } });
+    assert.ok(sheetIds().includes('module-health'), 'read blendet das Blatt aus');
+
+    // Nicht nur Gesundheit: jedes Modulblatt, das ein Mitglied sieht, folgt
+    // seinem Recht. Die Liste kommt aus der Registry und nicht aus diesem Test,
+    // damit ein neues Blatt mitgeprueft wird.
+    clearPermissions();
+    const gated = settingsSheetsForDomain('modules', member)
+      .filter((leaf) => leaf.module && leaf.module !== 'dashboard');
+    assert.ok(gated.length >= 6, `nur ${gated.length} Modulblaetter fuer Mitglieder - die Schleife misst zu wenig`);
+    for (const leaf of gated) {
+      setPermissions({ admin: false, modules: { [leaf.module]: 'none' } });
+      assert.ok(!sheetIds().includes(leaf.id), `${leaf.id} bleibt trotz ${leaf.module}: none`);
+      assert.equal(findSettingsLeaf(leaf.path, member), null, `${leaf.path} oeffnet trotz none`);
+    }
+
+    // Ein Blatt ohne Modul (Navigation) haengt an keinem Recht.
+    setPermissions({ admin: false, modules: Object.fromEntries(gated.map((leaf) => [leaf.module, 'none'])) });
+    assert.deepEqual(sheetIds(), ['modules-navigation'], 'ohne jedes Modulrecht bleibt genau das modulfreie Blatt');
+
+    // Ein Admin ist nie eingeschraenkt, was auch immer in der Tabelle steht.
+    setPermissions({ admin: true, modules: { health: 'none' } });
+    assert.ok(settingsSheetsForDomain('modules', { role: 'admin' }).some((leaf) => leaf.id === 'module-health'));
+  } finally {
+    clearPermissions();
+  }
+});
+
+// Critique 2026-10-05 (R16): das Kalender-Blatt mass mobil 4319px, fuenf
+// Abschnitte untereinander, der erste Schalter bei y=517. Das Sprungziel gab
+// es laengst (`?section=`, Ziel der Umleitungen) - nur keinen Weg dorthin, der
+// im Blatt selbst steht. Blaetter mit mehr als drei Abschnitten fuehren jetzt
+// Sprungmarken am Blattanfang; kurze Blaetter bleiben ohne.
+test('R16: ein Blatt mit mehr als drei Abschnitten fuehrt Sprungmarken auf seine Abschnitte', async () => {
+  const { SETTINGS_LEAVES, settingsSheetJumpTargets, settingsSheetSections } = await import('../public/settings/registry.js');
+  const admin = { id: 1, role: 'admin', is_admin: true };
+  const sheet = (id) => SETTINGS_LEAVES.find((entry) => entry.id === id);
+
+  const calendar = settingsSheetJumpTargets(sheet('module-calendar'), admin);
+  assert.deepEqual(calendar.map((target) => target.id),
+    ['personal-calendar', 'personal-calendar-subscriptions', 'personal-feeds', 'modules-calendar', 'sync-calendar'],
+    'in der Reihenfolge des Blatts: erst "Fuer mich", dann der Haushalt');
+  assert.equal(calendar[4].url, '/settings/modules/calendar?section=sync-calendar', 'dasselbe Ziel wie die Umleitungen');
+  assert.equal(calendar[0].labelKey, 'settings.pageCalendarDefaults', 'die Marke heisst wie der Abschnitt in der Registry');
+
+  // Drei Abschnitte sind ein Blick, keine Navigation.
+  const tasks = sheet('module-tasks');
+  assert.equal(settingsSheetSections(tasks, admin).length, 3);
+  assert.deepEqual(settingsSheetJumpTargets(tasks, admin), []);
+  // Was ein Mitglied nicht sieht, zaehlt nicht mit und steht nicht in den Marken.
+  const member = { id: 2, role: 'member', is_admin: false };
+  const memberTargets = settingsSheetJumpTargets(sheet('module-calendar'), member);
+  assert.ok(memberTargets.every((target) => settingsSheetSections(sheet('module-calendar'), member).some((s) => s.id === target.id)));
+});
+
+test('R16: die Sprungmarken sind Links im Blatt, eine scrollende Zeile, und springen ohne Neuaufbau', async () => {
+  const shell = await readFile(new URL('../public/settings/shell.js', import.meta.url), 'utf8');
+  assert.match(shell, /settingsSheetJumpTargets\(leaf, user\)/, 'die Shell fragt die Registry, sie zaehlt nicht selbst');
+  // Zurueck liest `state.path` VOR der Adresse (router.js, popstate): zieht nur
+  // die Adresse um, landet die Rueckkehr am alten Abschnitt (Review #1673).
+  const jump = shell.slice(shell.indexOf('function createSheetJump('), shell.indexOf('function createSheetJump(') + 1600);
+  assert.match(jump, /replaceState\?\.\(\{ \.\.\.window\.history\.state, path: target\.url \}, '', target\.url\)/,
+    'der History-Eintrag traegt den Abschnitt, nicht nur die Adresszeile');
+  assert.match(shell, /link\.href = target\.url/, 'ein echter Link: Mittelklick und "Adresse kopieren" fuehren an den Abschnitt');
+  assert.match(shell, /event\.preventDefault\(\);\s*\n\s*revealSheetSection\(leafContainer, target\.id\)/,
+    'der Klick springt im stehenden Blatt (Fokus auf die Abschnittsueberschrift), statt es neu zu laden');
+  const css = await readFile(new URL('../public/styles/settings.css', import.meta.url), 'utf8');
+  const rules = [...eachRule(css)];
+  const row = rules.find((r) => r.selector.trim() === '.settings-sheet-jump__list' && !r.at.length);
+  assert.match(row?.body ?? '', /overflow-x:\s*auto/);
+  assert.match(row?.body ?? '', /flex-wrap:\s*nowrap/, 'eine Zeile: umgebrochen kosteten fuenf Marken mobil drei Reihen vor dem ersten Schalter');
+});
+
+test('R16: mobil ist die Blattbeschreibung zwei Zeilen lang', async () => {
+  const css = await readFile(new URL('../public/styles/settings.css', import.meta.url), 'utf8');
+  const phone = [...eachRule(css)].find((r) => r.at.some((a) => /\(max-width:\s*767px\)/.test(a))
+    && r.selector.split(',').some((s) => s.trim() === '.settings-leaf-header__description'));
+  assert.match(phone?.body ?? '', /-webkit-line-clamp:\s*2/, 'vier Zeilen Vorspann standen vor dem ersten Schalter');
+});
+
+test('R16: im Blatt mit Sprungmarken steht die Beschreibung mobil nur im Baum', async () => {
+  // Marken und Beschreibung zaehlen beide auf, was im Blatt steht; zusammen
+  // schoben sie den ersten Schalter des Kalender-Blatts von y=517 auf 580.
+  const shell = await readFile(new URL('../public/settings/shell.js', import.meta.url), 'utf8');
+  assert.match(shell, /if \(jump\) \{[^}]*header\.classList\.add\('settings-leaf-header--jump'\)/,
+    'der Kopf weiss, dass Marken folgen - nur dann weicht die Beschreibung');
+  const css = await readFile(new URL('../public/styles/settings.css', import.meta.url), 'utf8');
+  const phone = [...eachRule(css)].find((r) => r.at.some((a) => /\(max-width:\s*767px\)/.test(a))
+    && r.selector.trim() === '.settings-leaf-header--jump .settings-leaf-header__description');
+  assert.match(phone?.body ?? '', /clip:\s*rect\(0, 0, 0, 0\)/, 'geclippt, nicht entfernt: der Text bleibt fuer Screenreader');
+  assert.doesNotMatch(phone?.body ?? '', /display:\s*none/);
+});
+
+
+// #1509: das aktive Blatt steht in der Seitenleiste SICHTBAR, nicht unter der
+// klebenden Suche. Gemessen im Browser (1280x700, Leiste 32-700, Suche klebt
+// bei 32-100): nach einem Sprung zu einem Blatt OBERHALB des sichtbaren
+// Ausschnitts (Zurueck, Palette, Deep-Link) stand der aktive Link bei 32-72,
+// alle 40px unter der Suche. Die Vorfassung rechnete mit der Oberkante der
+// Leiste, als laege dort nichts.
+//
+// Der Stub ist die Leiste als Geometrie: ein Scrollport mit einer Suche, die
+// an seiner Oberkante klebt, und einem Link an fester Stelle im Inhalt. Die
+// Rechtecke folgen scrollTop, wie im Browser.
+function settingsNavigationStub({ linkTop, scrollTop = 0, sticky = true }) {
+  const VIEW_TOP = 32;
+  const CLIENT = 668;
+  const SCROLL = 1408;
+  const SEARCH = 68;
+  const LINK = 40;
+  const state = { top: scrollTop };
+  const search = {
+    offsetHeight: SEARCH,
+    getBoundingClientRect: () => (sticky
+      ? { top: VIEW_TOP, bottom: VIEW_TOP + SEARCH }
+      : { top: VIEW_TOP - state.top, bottom: VIEW_TOP - state.top + SEARCH }),
+  };
+  const link = {
+    offsetTop: linkTop,
+    offsetHeight: LINK,
+    getBoundingClientRect: () => ({ top: VIEW_TOP + linkTop - state.top, bottom: VIEW_TOP + linkTop - state.top + LINK }),
+  };
+  const navigation = {
+    offsetTop: 0,
+    offsetHeight: CLIENT,
+    clientHeight: CLIENT,
+    scrollHeight: SCROLL,
+    get scrollTop() { return state.top; },
+    set scrollTop(value) { state.top = Math.min(SCROLL - CLIENT, Math.max(0, value)); },
+    getBoundingClientRect: () => ({ top: VIEW_TOP, bottom: VIEW_TOP + CLIENT, height: CLIENT }),
+    querySelector: (sel) => (sel.includes('navigation-link--active') ? link : sel.includes('navigation-search') ? search : null),
+  };
+  link.offsetParent = navigation;
+  globalThis.getComputedStyle = (node) => ({ position: node === search && sticky ? 'sticky' : 'static' });
+  /** Wie viele Pixel des Links unter der Suche oder ausserhalb der Leiste liegen. */
+  const hidden = () => {
+    const l = link.getBoundingClientRect();
+    const s = search.getBoundingClientRect();
+    const under = Math.max(0, Math.min(l.bottom, s.bottom) - Math.max(l.top, s.top));
+    return under + Math.max(0, VIEW_TOP - l.top) + Math.max(0, l.bottom - (VIEW_TOP + CLIENT));
+  };
+  return { navigation, hidden };
+}
+
+test('settings sidebar: the active link is revealed below the sticky search, not under it', async () => {
+  const { __test } = await import('/settings/shell.js');
+  assert.equal(typeof __test?.revealActiveNavigationLink, 'function');
+  const previous = globalThis.getComputedStyle;
+  try {
+    // Der gemessene Fall: Leiste weit unten, das aktive Blatt weiter oben.
+    const above = settingsNavigationStub({ linkTop: 485, scrollTop: 728 });
+    __test.revealActiveNavigationLink(above.navigation);
+    assert.equal(above.hidden(), 0, 'ein Link oberhalb des Ausschnitts landet unter der Suche');
+    assert.equal(above.navigation.scrollTop, 485 - 68, 'er steht direkt unter der Suche, nicht weiter');
+
+    // Halb verdeckt: die Oberkante liegt im Ausschnitt, aber hinter der Suche.
+    const half = settingsNavigationStub({ linkTop: 300, scrollTop: 270 });
+    __test.revealActiveNavigationLink(half.navigation);
+    assert.equal(half.hidden(), 0, 'ein von der Suche angeschnittener Link bleibt angeschnitten');
+
+    // Unterhalb: wie bisher bis an die Unterkante.
+    const below = settingsNavigationStub({ linkTop: 1300, scrollTop: 0 });
+    __test.revealActiveNavigationLink(below.navigation);
+    assert.equal(below.hidden(), 0);
+    assert.equal(below.navigation.scrollTop, 1300 + 40 - 668, 'ein Link darunter rueckt nur bis an die Unterkante');
+
+    // Schon sichtbar: die Leiste bleibt stehen.
+    const visible = settingsNavigationStub({ linkTop: 400, scrollTop: 275 });
+    __test.revealActiveNavigationLink(visible.navigation);
+    assert.equal(visible.navigation.scrollTop, 275, 'ein sichtbarer Link bewegt die Leiste nicht');
+
+    // Ohne klebende Suche gibt es nichts abzuziehen.
+    const plain = settingsNavigationStub({ linkTop: 485, scrollTop: 728, sticky: false });
+    __test.revealActiveNavigationLink(plain.navigation);
+    assert.equal(plain.navigation.scrollTop, 485, 'eine mitscrollende Suche verdeckt nichts');
+  } finally {
+    globalThis.getComputedStyle = previous;
+  }
 });

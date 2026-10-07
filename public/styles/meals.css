@@ -70,6 +70,9 @@
   text-align: center;
   /* Der Datumsbereich darf nicht zwischen den beiden Chevrons zerbrechen. */
   white-space: nowrap;
+  /* Gleich breite Ziffern: der Weiter-Pfeil wandert beim Wochenwechsel nicht
+   * mehr um die Breite einer anderen Ziffer (R16: x=483/485/491). */
+  font-variant-numeric: tabular-nums;
   /* KEINE Mindestbreite. Naheliegend wäre eine, damit die Chevrons beim
    * Wochenwechsel nicht um die Breite eines Monatsübergangs wandern. Als feste
    * 14rem sprengte sie bei 320px die Zeile, und als `min(14rem, 100%)` erzeugte
@@ -576,6 +579,15 @@
   gap: var(--space-1);
   align-self: stretch;
   text-align: left;
+}
+
+/* Wer kocht (#1679): der Avatar steht in der Meta-Zeile vor der Zutatenzahl,
+ * nicht im Titel - der Titel ist an jeder Breite der knappste Platz der Karte.
+ * `flex: none`, damit die Scheibe neben einer langen Zutatenzahl rund bleibt. */
+.meal-card__cook {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
 }
 
 .meal-card__ingredients-count {
@@ -1133,6 +1145,25 @@
   font-size: var(--text-sm);
 }
 
+/* Der Rezept-Link in der Leseansicht einer Mahlzeit (`meals: read`, #1265).
+ * Ihn zu oeffnen ist Lesen, also bleibt er ein Link - in der Akzentfarbe wie
+ * `.item-details__link` im Einkauf. Den Umbruch einer langen Adresse traegt
+ * die Zeile selbst (`.detail-row__value`, overflow-wrap: anywhere). */
+.meal-read__link {
+  color: var(--module-accent, var(--color-accent));
+  text-decoration: none;
+}
+
+.meal-read__link:hover { text-decoration: underline; }
+
+/* Der Koch in der Leseansicht (#1679): Avatar und Name in einer Zeile. */
+.meal-read__cook {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
 /* Leere Slots tragen keinen „Kein Essen geplant"-Text mehr (Rauschen auf dem
  * Planer-Raster) — nur noch Typ-Label + Plus-Affordanz. */
 
@@ -1146,11 +1177,31 @@
   opacity: 0.85;
   box-shadow: var(--glass-shadow-lg);
   transform: rotate(2deg) scale(1.03);
+  /* `transition: none` bleibt: der Geist folgt dem Zeiger ueber `left`/`top`,
+   * jede Transition darauf liesse ihn nachziehen. Das ABHEBEN laeuft deshalb
+   * als Keyframe-Animation auf `transform`/`opacity` - sie beruehrt die Lage
+   * nicht (R16, Bewegung: der Geist stand vorher im ersten Frame gedreht da). */
   transition: none;
+  animation: meal-ghost-lift var(--duration-xs) var(--ease-out);
+}
+
+@keyframes meal-ghost-lift {
+  from { transform: none; opacity: 1; }
+}
+
+/* Die Quelle blendet beim Abheben ab und beim Ablegen wieder auf, statt
+ * zwischen 1 und 0.35 zu springen. Eigene Regel NACH `.meal-slot`, damit die
+ * Liste dort (border-color) erhalten bleibt. */
+.meal-slot {
+  transition: border-color var(--transition-fast), opacity var(--transition-fast);
 }
 
 .meal-slot--dragging {
   opacity: 0.35;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .meal-card--ghost { animation: none; }
 }
 
 .meal-slot--drop-target {
@@ -1255,7 +1306,17 @@
    * 1280px bleibt ein Scroll-Fenster wie zuvor.
    *
    *   Bedarf   116 Gutter + 7 × 140 Spalte + 7 × 8 Gap = 1152px
-   *   1440px   1156 verfügbar → passt, 7/7 sichtbar (Rezept-Spalte eingeklappt) */
+   *   1440px   1156 verfügbar → passt, 7/7 sichtbar (Rezept-Spalte eingeklappt)
+   *
+   * NACHGEMESSEN 2026-10-05 (Critique R16, „bei 1280 liegt der Sonntag
+   * ausserhalb"), am Demo-Haushalt mit 27 Karten: sieben Spalten in 996px
+   * sind 117,7px je Tag und 83px Titelbreite (heute 105). Abgeschnitten
+   * („…" nach zwei Zeilen) waeren 12 von 27 Titeln statt 2, getrennt 13 von
+   * 49 Woertern statt 3; mit 12px statt 16px Kartenpolster (91px Titel) immer
+   * noch 10 von 27. Sieben Tage ohne Querscroll kosten bei 1280 also fast
+   * jede zweite Karte ihren Namen - das Scroll-Fenster bleibt. Wer es
+   * aufloesen will, baut die Ansicht um (5 + 2 Tage oder eine Tagesliste),
+   * nicht die Spaltenbreite. */
   .week-grid {
     display: grid;
     /* Breit genug für das längste deutsche Typ-Label („Mittagessen" ≈ 84px
@@ -1483,8 +1544,11 @@
     background-color: transparent;
   }
 
-  .week-grid .meal-slot--empty:hover,
-  .week-grid .meal-slot--empty:focus-within {
+  /* `:not(.meal-slot--static)`: bei `meals: read` (#1265) ist der leere Platz
+   * nur noch Zustand - er traegt kein Plus und nimmt kein Rezept auf. Die
+   * Kante unter dem Zeiger verspraeche beides. */
+  .week-grid .meal-slot--empty:not(.meal-slot--static):hover,
+  .week-grid .meal-slot--empty:not(.meal-slot--static):focus-within {
     border-color: var(--color-border);
   }
 

@@ -1,12 +1,12 @@
-<!-- version: 2.71.0 -->
-This update adds Brazilian Portuguese and fixes several things people ran into after 2.70.0.
+<!-- version: 2.74.0 -->
+This update brings a handful of new functions and a broad tidy-up of how the app looks and moves.
 
-Brazilian Portuguese is now its own language in the app, next to the existing Portuguese. A browser set to Brazilian Portuguese picks it on its own.
+A planned meal can name the member who cooks it, and the week plan and the overview show who that is. A household can put its members in an order of its own, and every list of people follows it. A loan can carry a due day, so "Mark paid" dates an installment on that day in its own month, and an installment whose month is already over no longer lands in the month you tapped in. The Singapore dollar and Singapore as a region are new, the calendar tile on the overview can list 8 or 12 appointments instead of 5, each device chooses how long it waits before the photo screensaver starts, and revoked or expired API tokens can be removed from the list.
 
-Changing a recurring budget payment for all future months no longer rewrites its first booking, which could lie years back and move old amounts to another account. Members who may edit the meal plan can now edit and delete recipes that someone else added; before, saving failed with "Not authorized", even for an admin.
+Removing a member no longer takes their entries with it: an account that has left traces in shared data is deactivated instead of deleted. Deleting a shared expense leaves a trace instead of rewriting the books, a monthly shared expense on the 29th, 30th or 31st no longer skips a month, and resuming a paused one no longer books every date it missed.
 
-When the weather service cannot be reached, the weather tile now stays on the overview and says the weather is currently unavailable, instead of disappearing without a trace. In the app added to an iPhone home screen, the dark strip below the tab bar is gone. Switches that are off are easier to see, and in Arabic and Persian "on" sits on the left.
+Across the modules, headers, tabs, dialogs and lists now share one layout and one kind of movement, and many pages show more on the first screen of a phone. With read-only access, the meal plan, recipes, pantry, inventory and documents no longer offer buttons that end in an error message. A module that is switched off for the household is left out of the overview and no longer works in the background.
 
-The update runs one database migration on first start. It gives every recurring budget payment a definition of its own, without changing any existing entry. No action is needed; as always, a backup before updating is a good idea.
+The update runs five database migrations on first start. They add the deactivated state and the order of household members, the due day of a loan, the anchor day of a recurring shared expense and the cook of a meal. No existing entry is lost and no action is needed; as always, a backup before updating is a good idea.
 
-Full release notes are available at https://github.com/ulsklyc/yuvomi/releases/tag/v2.71.0
+Full release notes are available at https://github.com/ulsklyc/yuvomi/releases/tag/v2.74.0

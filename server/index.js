@@ -36,6 +36,7 @@ import * as carddavSync from './services/cardav-sync.js';
 import * as holidays from './services/holidays.js';
 import { startScheduler as startBackupScheduler } from './services/backup-scheduler.js';
 import { startScheduler as startSplitExpenseScheduler } from './services/split-expenses-scheduler.js';
+import { startRewardMoneyScheduler } from './services/reward-money-scheduler.js';
 import { startScheduler as startPushScheduler } from './services/push-scheduler.js';
 import { startScheduler as startMedicationScheduler } from './services/medication-scheduler.js';
 import { startScheduler as startRecipeProviderScheduler } from './services/recipe-provider-sync.js';
@@ -557,9 +558,9 @@ app.use('/api/v1', (req, res, next) => {
       || req.path === '/auth/logout'
       || req.path === '/version';
     if (allowed) return next();
-    return res.status(403).json({ error: 'This account can only access Shared expenses.', code: 403 });
+    return res.status(403).json({ error: 'This account can only access Shared expenses.', code: 403, reason: 'split_guest_scope' });
   } catch {
-    return res.status(403).json({ error: 'This account can only access Shared expenses.', code: 403 });
+    return res.status(403).json({ error: 'This account can only access Shared expenses.', code: 403, reason: 'split_guest_scope' });
   }
 });
 // Scopes: Ein gescoptes Zugangsmittel (scopes !== null) darf ein Modul nur in
@@ -639,11 +640,14 @@ app.use('/api/v1', (req, res, next) => {
     scopedModuleKey,
     scopedAccess,
   );
+  // `reason` ist der maschinenlesbare Grund (#1607): der Satz in `error` ist
+  // englisch und stand so in jeder Oberflaechensprache im Toast. Die App
+  // uebersetzt ueber den Grund (public/api.js), API-Nutzer behalten den Satz.
   if (verdict === MODULE_ACCESS_DENIED) {
-    return res.status(403).json({ error: 'You do not have access to this module.', code: 403 });
+    return res.status(403).json({ error: 'You do not have access to this module.', code: 403, reason: 'module_access_denied' });
   }
   if (verdict === MODULE_ACCESS_READ_ONLY) {
-    return res.status(403).json({ error: 'You have read-only access to this module.', code: 403 });
+    return res.status(403).json({ error: 'You have read-only access to this module.', code: 403, reason: 'module_read_only' });
   }
   return next();
 });
@@ -853,6 +857,7 @@ const server = app.listen(PORT, BIND_ADDRESS, () => {
   // Backup-Scheduler starten
   startBackupScheduler();
   startSplitExpenseScheduler();
+  startRewardMoneyScheduler();
   startPushScheduler();
   startMedicationScheduler();
   startRecipeProviderScheduler();

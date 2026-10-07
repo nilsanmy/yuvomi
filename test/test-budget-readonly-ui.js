@@ -331,6 +331,31 @@ test('leerer Monat: ein Satz und der Knopf, keine dreifache Null (Critique 2026-
   assert.doesNotMatch(BUDGET_CODE, /budget\.loansEmptyDescription/, 'auch der Darlehen-Leerzustand verweist nicht mehr auf die +-Schaltflaeche');
 });
 
+test('Darlehenskarte mit `budget: read` und Faelligkeitstag: das volle Datum bleibt, das Buchen geht (#1631)', () => {
+  const mitTag = darlehen({ due_day: 27, next_due_month: '2026-07', next_due_date: '2026-07-27' });
+  withAccess({ budget: 'read' }, () => {
+    const html = budget.renderLoanCard(mitTag);
+    assert.match(html, /<span>budget\.loanNextDue\{"month":"2026-07-27"\}<\/span>/, 'die Faelligkeit ist Auskunft');
+    assert.doesNotMatch(html, /loan-pay|budget-loan-card__actions/);
+  });
+  withAccess({ budget: 'write' }, () => {
+    const html = budget.renderLoanCard(mitTag);
+    assert.match(html, /budget\.loanNextDue\{"month":"2026-07-27"\}/);
+    assert.match(html, /data-action="loan-pay"/);
+  });
+});
+
+test('Darlehenskarte ohne Faelligkeitstag: eine ueberfaellige Rate nennt den Monat, nicht das Buchungsdatum (#1741)', () => {
+  const alt = darlehen({ due_day: null, next_due_month: '2022-01', next_due_date: '2022-01-01' });
+  for (const level of ['read', 'write']) {
+    withAccess({ budget: level }, () => {
+      const html = budget.renderLoanCard(alt);
+      assert.match(html, /budget\.loanNextDue\{"month":"[^"]*2022[^"]*"\}/);
+      assert.doesNotMatch(html, /2022-01-01/, 'der Erste ist eine Buchungskonvention, keine Faelligkeit');
+    });
+  }
+});
+
 test('Keine Darlehen mit `budget: read`: kein Anlegen-CTA und keine Anleitung dazu', () => {
   const vorher = budget.state.loans;
   budget.state.loans = { loans: [], summary: {} };
@@ -965,11 +990,13 @@ test('der Riegel sitzt an BEIDEN Enden: jedes Speichern im offenen Dialog fragt 
     ['umbenennen', /'\[data-act="save"\]'\)\.forEach\(\(button\) => \{\n\s*button\.addEventListener\('click', async \(\) => \{\n\s*if \(readOnly\(\)\) return;/],
     ['loeschen', /'\[data-act="delete"\]'\)\.forEach\(\(button\) => \{\n\s*button\.addEventListener\('click', async \(\) => \{\n\s*if \(readOnly\(\)\) return;/],
   ]) assert.match(ABOS_CODE, re, `Abo-Metadaten: ${name} fragt nicht`);
-  // Geteilte Ausgaben: fuenf Formulare und das Loeschen einer Ausgabe.
+  // Geteilte Ausgaben: sechs Formulare (seit #1647 mit dem der Serie) und das
+  // Loeschen einer Ausgabe und einer Serie.
   const submits = [...SPLIT_CODE.matchAll(/addEventListener\('submit', async \(e\) => \{\n\s*e\.preventDefault\(\);\n\s*(.*)\n/g)];
-  assert.equal(submits.length, 5, `fuenf Formulare erwartet, ${submits.length} gefunden`);
+  assert.equal(submits.length, 6, `sechs Formulare erwartet, ${submits.length} gefunden`);
   for (const m of submits) assert.equal(m[1], 'if (readOnly()) return;');
   assert.match(SPLIT_CODE, /'#split-delete-expense'\)\?\.addEventListener\('click', async \(\) => \{\n\s*if \(readOnly\(\)\) return;/);
+  assert.match(SPLIT_CODE, /'#split-delete-recurring'\)\?\.addEventListener\('click', async \(\) => \{\n\s*if \(readOnly\(\)\) return;/);
 });
 
 // -------------------------------------------------------------------------
@@ -1231,11 +1258,13 @@ test('Ausgabe: die Leseansicht zeigt jeden Wert des Bearbeiten-Dialogs - ohne Ha
     groupMembers: [{ id: 1, display_name: 'Alex' }, { id: 3, display_name: 'Emma' }],
   });
   const werte = {
-    'splitExpenses.amount': [[/name="amount"[^>]*value="600"/, /<option value="EUR" selected>/], /^600,00\s€$/],
+    // Der Editor belegt in der Schreibweise der Region vor (amountToInput), also
+    // mit den Stellen der Waehrung - nicht mit dem rohen Wert der Antwort.
+    'splitExpenses.amount': [[/name="amount"[^>]*value="600,00"/, /<option value="EUR" selected>/], /^600,00\s€$/],
     'splitExpenses.paidBy': [[/<option value="1" selected>Alex</], /^Alex$/],
     'splitExpenses.date': [[/name="expense_date"[^>]*value="2026-08-02"/], /^2026-08-02$/],
     'splitExpenses.splitMethod': [[/<option value="exact" selected>/], /^splitExpenses\.splitExact$/],
-    'splitExpenses.participants': [[/name="split_value_1"[^>]*value="400"/, /name="split_value_3"[^>]*value="200"/],
+    'splitExpenses.participants': [[/name="split_value_1"[^>]*value="400,00"/, /name="split_value_3"[^>]*value="200,00"/],
       /^Alex: 400,00\s€\nEmma: 200,00\s€$/],
     'splitExpenses.notes': [[/Anzahlung<\/textarea>/], /^Anzahlung$/],
     'splitExpenses.receiptsLabel': [[/Rechnung\.pdf/], belegLink(5, 'Rechnung.pdf')],
@@ -1403,12 +1432,14 @@ function berichtKacheln(html) {
 test('Darlehen: der Bericht zeigt jeden Wert des Darlehens-Dialogs, den Karte und Kennzahlen nicht tragen', () => {
   mitKonten([konto()], () => {
     const loan = darlehen({
-      account_id: 4, start_month: '2026-01', notes: 'Sondertilgung <jaehrlich>', currency: 'EUR',
+      account_id: 4, start_month: '2026-01', due_day: 27, notes: 'Sondertilgung <jaehrlich>', currency: 'EUR',
       interest: { mode: 'fixed', principal: 20000, fixed_rate: 3.2, initial_repayment_rate: 2, monthly_payment: 850 },
     });
     const werte = {
       'budget.loanAccountLabel': [[/<option value="4" selected>Girokonto</], /^Girokonto$/],
       'budget.loanDetailStartMonthLabel': [[/id="lm-start" value="2026-01"/], /2026/],
+      // #1631: der Faelligkeitstag steht im Dialog als Feld, im Bericht als Wert.
+      'budget.loanDueDayLabel': [[/id="lm-due-day"[^>]*value="27"/], /^27$/],
       'budget.loanInitialRepaymentLabel': [[/id="lm-initial-repayment"[^>]*value="2"/], /^2$/],
       'budget.loanInterestModeLabel': [[/<option value="fixed" selected>/, /id="lm-fixed-rate"[^>]*value="3\.2"/],
         /^budget\.loanMonthlyRate\{"amount":"850,00\s€"\} · budget\.loanRateFixed\{"rate":"3,2\s%"\}$/],
@@ -1424,6 +1455,14 @@ test('Darlehen: der Bericht zeigt jeden Wert des Darlehens-Dialogs, den Karte un
     // Der erste Faelligkeitsmonat steht als Monatsname, nicht als Schluessel.
     assert.notEqual(berichtKacheln(html)['budget.loanDetailStartMonthLabel'], '2026-01');
     assert.equal(budget.loanReportDetails(darlehen()), '', 'ohne Angaben keine leere Kachelreihe');
+    // Ohne Faelligkeitstag keine Kachel dafuer - die Antwort folgt dem Datensatz.
+    assert.ok(!('budget.loanDueDayLabel' in berichtKacheln(budget.loanReportDetails({ ...loan, due_day: null }))));
+    // Und der Bericht zeigt den Tag mit `budget: read` genauso, ohne Bedienung.
+    withAccess({ budget: 'read' }, () => {
+      const lesen = budget.loanReportDetails(loan);
+      assert.equal(berichtKacheln(lesen)['budget.loanDueDayLabel'], '27');
+      assert.doesNotMatch(lesen, /<input|<button|lm-due-day/);
+    });
   });
 });
 

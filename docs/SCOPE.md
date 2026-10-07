@@ -189,8 +189,9 @@ deletions cannot be learned at all. Tracked as #1002.
   **What this does not decline, since #1293:** nutrition itself. A figure a household types
   about its own recipe - this pot serves four, one portion is roughly this much - is a
   statement about their own thing and not a fact about a product, and so are a daily target
-  per person and a meal somebody logs. Those are agreed and ticketed (#1326 to #1329), not
-  yet built, and they carry a fixed set of eight values: the seven the EU requires on a
+  per person and a meal somebody logs. Those are agreed and ticketed (#1326 to #1329): the
+  daily target and the logged intake shipped in v2.69.0 (#1326), the other three are not yet
+  built. They carry a fixed set of eight values: the seven the EU requires on a
   package, plus fibre. What stays declined is the step
   between them, deriving a total from what the ingredients *are*, which is the catalogue
   again and nothing else. The line and its reasons are entry 8 in
@@ -215,6 +216,15 @@ deletions cannot be learned at all. Tracked as #1002.
   [DECISIONS.md](DECISIONS.md)), and a fingerprint in the notes field, because `description` is a
   mirrored field and would travel as visible text with every edit. *Opens with:* a return path that
   knows which calendar an event came from.
+- **A training log** (#1733) - exercises with sets and repetitions, weights over time, saved
+  routines such as "Push day" - is *not here*. Yuvomi coordinates what several people in one home
+  have to settle together; a training log is one person's tool, with a data model as large as one
+  of the bigger modules and no tie to anything the family shares, and dedicated apps do it well.
+  What fits today is everything around the log: the gym slot as a recurring calendar event or
+  task, the session itself as a Health activity (type, duration, intensity, a note), and body
+  weight under Health. The full log is a third-party module, with a page of its own in the app
+  and its state in a separate service beside Yuvomi rather than in `yuvomi.db`
+  ([MODULES.md](../MODULES.md)).
 
 ---
 

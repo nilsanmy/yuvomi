@@ -493,6 +493,100 @@ test('WASTE_TYPE_COLORS: jede Preset-Farbe liegt im Raster', () => {
   }
 });
 
+/**
+ * DER FARBNAME NENNT DEN FARBTON (#1507).
+ *
+ * Die Swatches tragen ihren Namen als `aria-label` und `title` - wer die Farbe
+ * nicht sieht, hat nur ihn. Nach dem Wechsel auf die geteilte Palette hiess
+ * #D946EF (Fuchsia, Farbton 292) weiter "Violett" und #059669 (Smaragd, 161)
+ * weiter "Tuerkis": die Hex-Werte waren gewandert, die Namen nicht.
+ *
+ * Gemessen wird der Farbton des Hex-Werts gegen den Sektor, den der
+ * Schluesselname behauptet. Die Sektoren sind grob und ueberlappen nicht; sie
+ * sollen einen vertauschten Namen fangen, keine Nuance.
+ *
+ * Eine Ausnahme vom Nicht-Ueberlappen (#1723): Magenta und Fuchsia teilen
+ * sich einen Sektor, weil sie derselbe Farbton sind (300 Grad, in CSS sogar
+ * derselbe Wert). #EC4899 liegt bei 330 und hiess trotzdem "Magenta" - der
+ * Sektor stand hier zu weit und hat den Namen gedeckt, statt ihn zu pruefen.
+ * 310 bis 345 ist Pink.
+ */
+const HUE_SECTORS = {
+  colorRed: [345, 15],
+  colorOrange: [15, 28],
+  colorOcher: [28, 50],
+  colorGreen: [90, 150],
+  colorEmerald: [150, 170],
+  colorTeal: [170, 185],
+  colorCyan: [185, 200],
+  colorBlue: [200, 250],
+  colorViolet: [250, 280],
+  colorFuchsia: [280, 310],
+  colorMagenta: [280, 310],
+  colorPink: [310, 345],
+};
+
+function hueAndSaturation(hex) {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const delta = max - min;
+  let hue = 0;
+  if (delta > 0) {
+    if (max === r) hue = ((g - b) / delta) % 6;
+    else if (max === g) hue = (b - r) / delta + 2;
+    else hue = (r - g) / delta + 4;
+    hue = (hue * 60 + 360) % 360;
+  }
+  return { hue, saturation: max === 0 ? 0 : delta / max };
+}
+
+test('WASTE_TYPE_COLOR_NAMES: jeder Farbname liegt im Farbton seines Hex-Werts (#1507)', () => {
+  const pairs = [...WASTE_CODE.matchAll(/'(#[0-9A-F]{6})':\s*t\('waste\.(color\w+)'\)/g)].map((m) => [m[1], m[2]]);
+  assert.equal(pairs.length, WASTE_TYPE_COLORS.length, 'nicht jede Palettenfarbe hat einen Namen');
+  assert.deepEqual(pairs.map(([hex]) => hex).sort(), [...WASTE_TYPE_COLORS].sort());
+  const failures = [];
+  for (const [hex, key] of pairs) {
+    const { hue, saturation } = hueAndSaturation(hex);
+    if (key === 'colorGray') {
+      if (saturation > 0.2) failures.push(`${hex} heisst ${key}, ist aber bunt (Saettigung ${saturation.toFixed(2)})`);
+      continue;
+    }
+    const sector = HUE_SECTORS[key];
+    assert.ok(sector, `${key}: kein Farbton-Sektor hinterlegt`);
+    const [from, to] = sector;
+    const inside = from < to ? hue >= from && hue < to : hue >= from || hue < to;
+    if (!inside) failures.push(`${hex} heisst ${key}, liegt aber bei Farbton ${Math.round(hue)}`);
+  }
+  assert.deepEqual(failures, []);
+});
+
+test('#EC4899 heisst in jeder Sprache Pink, und der alte Name ist kein zweiter (#1723)', async () => {
+  const { readFileSync, readdirSync } = await import('node:fs');
+  // Das Etikett ist neu, der gespeicherte Wert nicht: eine Abfallart traegt den
+  // Hex-Wert, und der bleibt in der Palette.
+  assert.ok(WASTE_TYPE_COLORS.includes('#EC4899'), '#EC4899 ist nicht mehr waehlbar - Bestandsdaten zeigten dann auf nichts');
+  const name = WASTE_CODE.match(/'#EC4899':\s*t\('waste\.(color\w+)'\)/);
+  assert.ok(name, '#EC4899 hat keinen Namen mehr');
+  assert.equal(name[1], 'colorPink');
+  const dir = new URL('../public/locales/', import.meta.url);
+  const files = readdirSync(dir).filter((file) => file.endsWith('.json'));
+  assert.ok(files.length >= 20, 'zu wenige Locale-Dateien gelesen');
+  const seen = new Map();
+  for (const file of files) {
+    const { waste } = JSON.parse(readFileSync(new URL(file, dir), 'utf8'));
+    assert.equal(typeof waste.colorPink, 'string', `${file}: waste.colorPink fehlt`);
+    assert.equal(waste.colorMagenta, undefined, `${file}: waste.colorMagenta ist ein toter zweiter Name`);
+    // Kein Name darf doppelt in der Palette stehen - ein Screenreader koennte
+    // die zwei Swatches sonst nicht unterscheiden.
+    const names = Object.entries(waste).filter(([key]) => /^color[A-Z]/.test(key) && key !== 'colorCurrent').map(([, value]) => value);
+    assert.equal(new Set(names).size, names.length, `${file}: zwei Farben heissen gleich (${names.join(', ')})`);
+    seen.set(file, waste.colorPink);
+  }
+  assert.equal(seen.get('de.json'), 'Pink');
+  assert.equal(seen.get('en.json'), 'Pink');
+});
+
 test('WASTE_TYPE_COLORS: eine kuratierte Auswahl ohne Dubletten und ohne Extremwerte', () => {
   assert.equal(new Set(WASTE_TYPE_COLORS).size, WASTE_TYPE_COLORS.length, 'keine doppelten Farben');
   assert.ok(WASTE_TYPE_COLORS.length >= 8, 'zu wenig Auswahl ist auch keine');
@@ -595,9 +689,18 @@ test('die Seite hat einen sichtbaren, beschrifteten Weg zur ersten Abfallart, un
   // die Variante hier ausdruecklich im Test und nicht nur im Kommentar.
   assert.match(WASTE_SRC, /class="btn btn--secondary" id="waste-add-type-btn" data-action="add-type"/);
   assert.doesNotMatch(WASTE_CODE, /class="btn btn--primary" id="waste-add-type-btn"/);
-  // Und genau einmal: der Menueeintrag ist beim Befoerdern entfallen.
+  // Und genau einmal als Knopf. Seit R16 (Kopfregel mobil 1a) gibt es den
+  // Menueeintrag wieder, aber nie NEBEN dem Knopf: unter 768px traegt die
+  // Titelzeile nur Icon-Knoepfe, der beschriftete Knopf ist dort ausgeblendet
+  // und der Eintrag steht; ab 768px umgekehrt. Je Breite EIN Weg.
   assert.equal((WASTE_SRC.match(/data-action="add-type"/g) ?? []).length, 1);
-  assert.doesNotMatch(WASTE_SRC, /action: 'add-type'/, 'add-type darf nicht mehr im Ueberlaufmenue stehen');
+  assert.equal((WASTE_CODE.match(/action: 'add-type'/g) ?? []).length, 1);
+  const wasteCss = readFileSync(new URL('../public/styles/waste.css', import.meta.url), 'utf8');
+  const hides = (sel, media) => [...eachRule(wasteCss)].some((r) => r.selector.trim() === sel
+    && /display:\s*none/.test(r.body) && (media ? r.at.some((a) => media.test(a)) : r.at.length === 0));
+  assert.ok(hides('#waste-add-type-btn', /max-width:\s*767px/), 'unter 768px weicht der Kopfknopf dem Menueeintrag');
+  assert.ok(hides('#waste-page-menu [data-action="add-type"]', /min-width:\s*768px/), 'ab 768px weicht der Eintrag dem Knopf');
+  assert.ok(hides('.waste-page--onboarding #waste-page-menu [data-action="add-type"]'), 'im Onboarding traegt der FAB den Weg');
   // Die drei uebrigen Kopf-Aktionen bleiben im Menue.
   for (const a of ['open-import', 'open-url-source', 'open-reminder-settings']) {
     assert.match(WASTE_SRC, new RegExp(`action: '${a}'`), `${a} gehoert weiter ins Ueberlaufmenue`);

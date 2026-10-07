@@ -4,8 +4,10 @@ import { stagger, scheduleUndoableDelete } from '/utils/ux.js';
 import { wireSwipeRows, maybeShowSwipeHint } from '/utils/swipe-row.js';
 import { t, formatDate, parseDateInput, isDateInputValid, getLocale, formatUnit } from '/i18n.js';
 import { esc } from '/utils/html.js';
+import { initials } from '/utils/initials.js';
 import { rowActionHtml } from '/utils/row-action.js';
-import { pageToolsMenuHtml, installPopoverMenus } from '/utils/popover-menu.js';
+import { readRowHtml, readRowHintHtml } from '/utils/read-row.js';
+import { pageToolsMenuHtml, pageToolsActionEl, installPopoverMenus } from '/utils/popover-menu.js';
 import { renderSkeletonList } from '/utils/skeleton.js';
 import { todayKey } from '/utils/date.js';
 import { setNavBadge, BIRTHDAY_BADGE_DAYS } from '/utils/nav-badges.js';
@@ -25,7 +27,6 @@ import {
   renderPageTitle,
   renderPageBody,
   renderPageActions,
-  renderPageSection,
   renderListSection,
 } from '/utils/page-layout.js';
 
@@ -62,15 +63,6 @@ function readOnly() {
 // Inline-SVG (Lucide-Stil) – das self-hostete Icon-Subset lässt sich nicht
 // grep-verifizieren, darum die Torte als eingebettetes SVG für den „Heute"-Höhepunkt.
 const CAKE_SVG = `<svg class="birthday-cake" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-8a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8"/><path d="M4 16s.5-1 2-1 2.5 2 4 2 2.5-2 4-2 2.5 2 4 2 2-1 2-1"/><path d="M2 21h20"/><path d="M7 8v3M12 8v3M17 8v3"/><path d="M7 4h.01M12 4h.01M17 4h.01"/></svg>`;
-
-function initials(name) {
-  return String(name || '')
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() || '')
-    .join('') || '?';
-}
 
 // Die Werte sind Minuten vor 12:00 am Geburtstag, so wie `getOffsetMinutes()`
 // in server/services/birthdays.js sie liest. '' ist „Keine": der Server legt
@@ -343,9 +335,9 @@ function photoAvatar(birthday, extraClass = '') {
     const color = birthday.family_avatar_color || AVATAR_FALLBACK_COLOR;
     const name = birthday.family_display_name || birthday.name;
     return `<span class="birthday-avatar birthday-avatar--fallback ${extraClass}"
-      style="background-color:${esc(color)};color:${getReadableTextColor(color)}">${esc(initials(name))}</span>`;
+      style="background-color:${esc(color)};color:${getReadableTextColor(color)}">${esc(initials(name, '?'))}</span>`;
   }
-  return `<span class="birthday-avatar birthday-avatar--fallback ${extraClass}">${esc(initials(birthday.name))}</span>`;
+  return `<span class="birthday-avatar birthday-avatar--fallback ${extraClass}">${esc(initials(birthday.name, '?'))}</span>`;
 }
 
 function sortByProximity(list) {
@@ -446,7 +438,7 @@ export function birthdayItemHtml(birthday) {
       </div>`}
     <article class="list-row birthday-item ${isToday ? 'birthday-item--today' : ''}" data-id="${birthday.id}" data-md-id="${birthday.id}">
       <div class="birthday-item__media">${photoAvatar(birthday)}</div>
-      <button type="button" class="list-row__main list-row__main--interactive" data-open="${birthday.id}" data-md-focus>${hauptspalte}</button>
+      <button type="button" class="list-row__main list-row__main--interactive" data-open="${birthday.id}" data-md-focus>${hauptspalte}${ro ? readRowHintHtml() : ''}</button>
       ${ro ? '' : `
       <div class="row-actions birthday-item__actions">
         ${rowActionHtml({ icon: 'pencil', action: 'edit', label: t('common.editNamed', { name: birthday.name }), attrs: { 'data-id': birthday.id } })}
@@ -609,6 +601,7 @@ function renderPage() {
     header: renderPageHeader({
       wrap: true,
       narrow: true,
+      titleTools: true,
       className: 'birthdays-toolbar',
       title: renderPageTitle(t('birthdays.title')),
       center: renderPageSearch({
@@ -626,10 +619,9 @@ function renderPage() {
     }),
     body: renderPageBody({
       content: [
-        renderPageSection({
-          className: 'birthdays-hint-section',
-          content: `<p class="birthdays-hint">${t('birthdays.calendarHint')}</p>`,
-        }),
+        // Der Dauerhinweis „erscheint auch im Kalender" stand hier als 41px
+        // ueber jeder Liste (R16). Er steht wortgleich im Dialog, an der
+        // Stelle, an der die Entscheidung faellt.
         renderListSection({
           className: 'birthdays-list-section',
           content: `
@@ -664,7 +656,7 @@ function bindEvents() {
   // schliesst das Panel in der Capture-Phase, bevor der Dialog aufgeht).
   installPopoverMenus(_container);
   _container.querySelector('.birthdays-toolbar')?.addEventListener('click', (e) => {
-    const item = e.target.closest('.popover-menu__item[data-action="import-contacts"]');
+    const item = pageToolsActionEl(e.target, 'import-contacts');
     if (item && !readOnly()) openImportModal();
   });
 
@@ -734,7 +726,7 @@ async function onListClick(e) {
 function birthdayPreviewHtml(name, photoData) {
   if (photoData) return `<img class="birthday-preview__image" src="${photoData}" alt="${esc(name || '')}">`;
   if (!String(name || '').trim()) return '<i data-lucide="camera" class="birthday-preview__glyph" aria-hidden="true"></i>';
-  return `<span class="birthday-preview__fallback">${esc(initials(name))}</span>`;
+  return `<span class="birthday-preview__fallback">${esc(initials(name, '?'))}</span>`;
 }
 
 // --------------------------------------------------------
@@ -785,25 +777,6 @@ function nameDayReadText(nameDay) {
   if (!month || !day) return '';
   return new Intl.DateTimeFormat(getLocale(), { day: 'numeric', month: 'long', timeZone: 'UTC' })
     .format(new Date(Date.UTC(2000, month - 1, day)));
-}
-
-/**
- * Eine Zeile der Leseansicht. Das Markup ist das von `detailRowEl()` aus
- * components/detail-view.js - Icon, Beschriftung, Wert -, als Zeichenkette,
- * weil der geteilte Dialog seinen Inhalt als Markup bekommt. Die Gestalt kommt
- * damit aus detail-view.css (in der Shell geladen), nicht aus einer eigenen
- * Regel. Wie dort: eine Zeile ohne Wert faellt weg.
- */
-function readRowHtml({ icon, label, value, multiline = false }) {
-  if (!value) return '';
-  return `
-          <div class="detail-row${multiline ? ' detail-row--multiline' : ''}">
-            <i class="detail-row__icon" data-lucide="${icon}" aria-hidden="true"></i>
-            <div class="detail-row__text">
-              <span class="detail-row__label">${esc(label)}</span>
-              <span class="detail-row__value">${esc(value)}</span>
-            </div>
-          </div>`;
 }
 
 /**

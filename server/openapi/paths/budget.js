@@ -4,7 +4,7 @@ export function budgetPaths() {
   return {
     '/api/v1/budget/summary': { get: op({ summary: 'Get budget summary', tag: 'Budget' }) },
     '/api/v1/budget/plans': {
-      get: op({ summary: 'Get planned budget vs. actual for a month (category caps + savings goal)', tag: 'Budget' }),
+      get: op({ summary: 'Get planned budget vs. actual for a month (category caps + savings goal)', tag: 'Budget', description: 'In personal budget mode the actual figures count what you can see, like the summary: `scope` (`mine`|`household`, default `mine`) picks the view, private entries of others do not count, and the amount of an entry of someone else whose details are hidden (`shared_amount`) counts only toward income and balance of the savings goal, never toward a category. Shared mode counts every entry.' }),
     },
     '/api/v1/budget/plans/{category}': {
       put: op({ summary: 'Set planned monthly amount for a category or the savings goal (__savings__)', tag: 'Budget', params: [stringPathParam('category', 'Expense category key or __savings__')], stateChanging: true, requestBody: jsonBody(null) }),
@@ -43,18 +43,18 @@ export function budgetPaths() {
       delete: op({ summary: 'Delete account (linked entries are kept, account_id cleared)', tag: 'Budget', params: [idParam()], stateChanging: true }),
     },
     '/api/v1/budget/loans': {
-      get: op({ summary: 'List loans and repayment summary', tag: 'Budget' }),
-      post: op({ summary: 'Create loan', tag: 'Budget', stateChanging: true, requestBody: jsonBody(null) }),
+      get: op({ summary: 'List loans and repayment summary', tag: 'Budget', description: 'Each loan carries `due_day` (1 to 31, or `null`), `next_due_month` (`YYYY-MM`) and `next_due_date` (`YYYY-MM-DD`): the due day in the month the next installment is due, clamped to the last day of a shorter month. For a loan without a due day, `next_due_date` is the 1st of `next_due_month` when that month lies before the household\'s current month (a booking date, not a due date), and `null` for an installment due in the current or a later month. Both are `null` once the loan is settled.' }),
+      post: op({ summary: 'Create loan', tag: 'Budget', stateChanging: true, requestBody: jsonBody(null), description: 'Optional `due_day`: a whole number from 1 to 31, the day of the month an installment is due; `null`, an empty string or leaving it out means none. Anything else is refused with 400 and `reason: loan_due_day_invalid`. With a due day, the installments recorded through `paid_installments` are dated on that day instead of the 1st. The response carries `due_day`, `next_due_month` and `next_due_date`.' }),
     },
     '/api/v1/budget/loans/{id}': {
-      put: op({ summary: 'Update loan', tag: 'Budget', params: [idParam()], stateChanging: true, requestBody: jsonBody(null) }),
+      put: op({ summary: 'Update loan', tag: 'Budget', params: [idParam()], stateChanging: true, requestBody: jsonBody(null), description: 'Optional `due_day`: a whole number from 1 to 31, or `null` to remove it; leaving the field out keeps the stored day. Anything else is refused with 400 and `reason: loan_due_day_invalid`. Changing the day never moves installments that are already recorded. The response carries `due_day`, `next_due_month` and `next_due_date`.' }),
       delete: op({ summary: 'Delete loan and linked repayment entries', tag: 'Budget', params: [idParam()], stateChanging: true }),
     },
     '/api/v1/budget/loans/preview': {
       post: op({ summary: 'Preview a loan without saving it', tag: 'Budget', stateChanging: true, requestBody: jsonBody(null), description: 'Computes the monthly instalment, term, total interest and remaining debt for the values in the dialog, without writing anything. The server stays the single source of the interest maths - duplicating the formula in the client would give two answers that drift.' }),
     },
     '/api/v1/budget/loans/{id}/payments': {
-      post: op({ summary: 'Record loan repayment', tag: 'Budget', params: [idParam()], stateChanging: true, requestBody: jsonBody(null) }),
+      post: op({ summary: 'Record loan repayment', tag: 'Budget', params: [idParam()], stateChanging: true, requestBody: jsonBody(null), description: '`paid_date` (`YYYY-MM-DD`) is required and stored as sent, on the installment and on its budget entry. To date an installment the way "Mark paid" does, send the loan\'s `next_due_date`: the due day, or for a loan without one the 1st of a due month that is already over. It is `null` for a loan without a due day whose next installment is due in the current or a later month; send the household\'s today then.' }),
     },
     '/api/v1/budget/loans/{id}/payments/{paymentId}': {
       delete: op({ summary: 'Delete loan repayment', tag: 'Budget', params: [idParam(), idParam('paymentId', 'Loan payment ID')], stateChanging: true }),
@@ -68,8 +68,14 @@ export function budgetPaths() {
           name: 'scope',
           in: 'query',
           required: false,
-          description: "View filter when the household runs in personal budget mode (preference `budget_mode=personal`): `mine` shows entries you own, `household` shows the shared pot. Ignored in shared mode. Entries also carry `owner_id` and `visibility` (`private`|`shared`); private entries are only visible to their owner (no admin bypass). Each entry carries `attachments`: linked documents from the documents module, filtered by document visibility.",
+          description: "View filter when the household runs in personal budget mode (preference `budget_mode=personal`): `mine` shows entries you own, `household` shows the shared pot. Ignored in shared mode. Entries also carry `owner_id` and `visibility` (`private`|`shared`|`shared_amount`); private entries are only visible to their owner (no admin bypass), and on a `shared_amount` entry of someone else only amount, date and account remain (`details_hidden: true`). Each entry carries `attachments`: linked documents from the documents module, filtered by document visibility.",
           schema: { type: 'string', enum: ['mine', 'household'], default: 'mine' },
+        }, {
+          name: 'category',
+          in: 'query',
+          required: false,
+          description: 'Only entries of this category key; an unknown key is ignored. The filter sees the same view as the response: in personal budget mode an entry of someone else whose details are hidden from you (`shared_amount`) carries the category `__private__` and matches only that key, like the catch-all bucket in the summary and statistics.',
+          schema: { type: 'string' },
         }, {
           name: 'q',
           in: 'query',
