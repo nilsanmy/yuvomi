@@ -12,8 +12,9 @@
 
 const FALLBACK_CATEGORY = 'Sonstiges';
 
-// Deutsche und englische Stichworte, da Provider-Instanzen in beiden Sprachen
-// befüllt sein können. Reihenfolge ist irrelevant, die erste Übereinstimmung zählt.
+// Deutsche, englische und norwegische Stichworte, da Provider-Instanzen in
+// diesen Sprachen befüllt sein können. Reihenfolge ist irrelevant, die erste
+// Übereinstimmung zählt.
 const KEYWORDS = {
   'Obst & Gemüse': [
     'apple', 'apfel', 'banana', 'banane', 'tomato', 'tomate', 'onion', 'zwiebel',
@@ -21,9 +22,9 @@ const KEYWORDS = {
     'zitrone', 'lime', 'pepper', 'paprika', 'lettuce', 'salat', 'spinach', 'spinat',
     'cucumber', 'gurke', 'vegetable', 'gemüse', 'fruit', 'obst', 'herb', 'kräuter',
     'basil', 'basilikum', 'parsley', 'petersilie', 'mushroom', 'pilz', 'løk', 'rødløk', 
-    'vårløk', 'hvitløk', 'potet', 'poteter', 'gulrot', 'gulrøtter', 'tomat', 'tomater', 
+    'vårløk', 'hvitløk', 'potet', 'poteter', 'gulrot', 'gulrøtter', 'tomat', 'tomater',
     'agurk', 'brokkoli', 'blomkål', 'kål', 'purre', 'sopp', 'sitron', 'eple', 'epler', 
-    'banan', 'bananer', 'frukt', 'grønnsaker','persille', 'koriander', 'ingefær',
+    'banan', 'bananer', 'frukt', 'grønnsaker','persille', 'koriander', 'ingefær'
   ],
   'Backwaren': [
     'flour', 'mehl', 'bread', 'brot', 'baking powder', 'backpulver', 'yeast',
