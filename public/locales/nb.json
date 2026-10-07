@@ -2170,7 +2170,7 @@
         "backupWebdavTriggerBtn": "Last opp nå",
         "backupWebdavTriggering": "Laster opp...",
         "backupWebdavTriggeredToast": "Sikkerhetskopiering lastet opp til WebDAV med suksess.",
-        "backupWebdavTestSuccess": "Tilkobling vellykket - {{files}} sikkerhetskopiering(er) funnet.",
+        "backupWebdavTestSuccess": "Tilkobling vellykket - {{files}} sikkerhetskopi(er) funnet.",
         "backupWebdavTestFailed": "Tilkobling feilet: {{error}}",
         "backupWebdavPasswordRequired": "En annen server eller et annet brukernavn krever passordet på nytt.",
         "backupWebdavLastUpload": "Siste opplasting",
