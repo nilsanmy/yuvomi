@@ -95,7 +95,7 @@
     "edit": "Endre",
     "notSetUp": "Ikke konfigurert",
     "groupIntegrations": "Integrasjoner",
-    "subtitle": "Kontroller innstillingene dine før du skriver .env og starter beholderen.",
+    "subtitle": "Kontroller innstillingene dine før du skriver .env og starter containeren.",
     "host": "Vert",
     "port": "Port",
     "tz": "Tidssone",
@@ -150,9 +150,9 @@
     "showLogs": "Vis logg",
     "hideLogs": "Skjul logg",
     "timedOut": "Intet svar etter 15 minutter. Sjekk loggen og prøv igjen.",
-    "logLabel": "Container-logg",
-    "stepPull": "Last ned bilde",
-    "stepBoot": "Start Containeren",
+    "logLabel": "Containerlogg",
+    "stepPull": "Last ned image",
+    "stepBoot": "Start containeren",
     "stepHealth": "Helsesjekk",
     "stepFailed": "(mislyktes)",
     "doneTitle": "Yuvomi kjører",
@@ -289,7 +289,7 @@
     "advancedDesc": "Full kontroll: reverse proxy, kalendersynkronisering, e-post, single sign-on og sikkerhetskopier.",
     "advancedTime": "Alle valgmuligheter, steg for steg",
     "existingLocked": "En eksisterende installasjon ble oppdaget. Fortsett med avansert oppsett slik at dine nåværende innstillinger beholdes.",
-    "containerRunning": "Yuvomi kjører for øyeblikket. Lagring vil starte beholderen på nytt, så den vil være utilgjengelig en kort stund."
+    "containerRunning": "Yuvomi kjører for øyeblikket. Lagring vil starte containeren på nytt, så den vil være utilgjengelig en kort stund."
   },
   "simple": {
     "title": "Klar til bruk",
