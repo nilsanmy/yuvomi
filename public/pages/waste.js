@@ -642,10 +642,26 @@ async function createPresetType(key, button) {
   }
 }
 
+/**
+ * Pure: die Zustandsklassen der Seite. `--no-active-type` gilt, sobald der
+ * Primaerknopf eine Abfallart anlegt statt eines Termins (fabIntent) - also
+ * auch, wenn es Abfallarten gibt und ALLE archiviert sind. Das ist kein
+ * Onboarding (die Karten muessen wiederherstellbar bleiben), aber eine
+ * Einzelabholung hat auch dann nichts zu waehlen: der Menueeintrag "Abholung
+ * hinzufuegen" oeffnete in dem Zustand den Abfallart-Dialog (#1775). waste.css
+ * nimmt ihn unter dieser Klasse heraus.
+ */
+function pageModeClasses(s) {
+  return {
+    'waste-page--onboarding': isOnboarding(s),
+    'waste-page--no-active-type': fabIntent(s).creates === 'type',
+  };
+}
+
 /** Zieht Abschnitte, Kopfknopf und FAB auf den Zustand nach. */
 function applyPageMode() {
   const page = _container.querySelector('.waste-page');
-  page?.classList.toggle('waste-page--onboarding', isOnboarding(state));
+  for (const [name, on] of Object.entries(pageModeClasses(state))) page?.classList.toggle(name, on);
   const intent = fabIntent(state);
   const fab = findPageFab('waste-fab-new-pickup');
   if (fab) {
@@ -760,8 +776,12 @@ function drawSources(host) {
   }
   if (!state.sources.length) {
     host.replaceChildren();
+    // EIN VOLLER LEERZUSTAND JE SEITE (R18, 2026-10-07): die Seite fuehrt ihn
+    // oben ("Noch nichts geplant" bzw. das Onboarding der Abfallarten). Die
+    // Importquellen sind ein Nebenabschnitt mit eigenem Kopf und sagen es in
+    // einem Satz - der Knopf darunter bleibt der Weg, den der Satz nennt.
     host.insertAdjacentHTML('beforeend', emptyStateHTML({
-      title: t('waste.emptySourcesTitle'),
+      compact: true,
       description: t('waste.emptySourcesDescription'),
       // Der Leerzustand NANNTE den Weg schon, ohne ihn anzubieten: seine
       // Beschreibung lautet woertlich „Importiere eine ICS-Datei deiner
@@ -772,7 +792,8 @@ function drawSources(host) {
       // etwas anderes tut als sein eigener Text ankuendigt, ist schlimmer als
       // gar keiner.
       // Nur-lesen: derselbe Riegel wie beim Abfallart-Leerzustand darueber.
-      action: readOnly() ? null : { label: t('waste.importFileAction'), icon: 'upload', attrs: { id: 'waste-empty-add-source' } },
+      // Sekundaer: der Primaerknopf der Seite ist der FAB ("Termin").
+      action: readOnly() ? null : { label: t('waste.importFileAction'), icon: 'upload', tone: 'secondary', attrs: { id: 'waste-empty-add-source' } },
     }));
     host.querySelector('#waste-empty-add-source')?.addEventListener('click', () => openImportWizard());
     if (window.lucide) window.lucide.createIcons({ el: host });
@@ -2156,7 +2177,8 @@ function renderPage() {
             // Primaerknopf anlegt (Entscheidung R17, E2) - ein Werkzeug, kein
             // Hauptweg. Der Kopf entsteht VOR dem Laden und wird danach nicht
             // neu gebaut: der Eintrag steht deshalb immer im Markup, und
-            // waste.css nimmt ihn im Onboarding (keine Abfallart) heraus.
+            // waste.css nimmt ihn heraus, solange keine Abfallart aktiv ist
+            // (pageModeClasses(): keine oder nur archivierte).
             { action: 'add-pickup', label: t('waste.addPickup'), icon: 'calendar-plus' },
             { action: 'open-import', label: t('waste.importFileAction'), icon: 'upload' },
             { action: 'open-url-source', label: t('waste.addUrlSourceAction'), icon: 'link' },
@@ -2304,8 +2326,9 @@ function bindEvents() {
     } else if (kind === 'add-type') {
       openTypeModal();
     } else if (kind === 'add-pickup') {
-      // Nur archivierte Abfallarten: der Dialog haette nichts zu waehlen -
-      // derselbe Weg, den der Primaerknopf dann nimmt (fabIntent()).
+      // Nur archivierte Abfallarten: der Dialog haette nichts zu waehlen.
+      // Der Eintrag ist in dem Zustand ausgeblendet (pageModeClasses()); das
+      // hier bleibt die Linie dahinter fuer einen Aufruf ohne Menue.
       if (fabIntent(state).creates === 'type') openTypeModal();
       else openPickupModal();
     } else if (kind === 'create-preset-type') {
@@ -2435,5 +2458,5 @@ export const __test = {
   // im Menue steht, und dass die Preset-Farben allesamt im Raster liegen.
   typeCardHtml, scheduleRowHtml, sourceRowHtml, TYPE_PRESETS, WASTE_TYPE_COLORS,
   activeSwatchColor, resolveSwatchColors,
-  isOnboarding, onboardingHtml, sectionVisibility, fabIntent,
+  isOnboarding, onboardingHtml, sectionVisibility, fabIntent, pageModeClasses,
 };

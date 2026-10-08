@@ -11,7 +11,8 @@ import { makeSortable } from '/utils/sortable.js';
 import { memberRanks, memberRankOf } from '/utils/member-order.js';
 import { createPageFab, setPageFabAction } from '/utils/fab.js';
 import { emptyStateHTML } from '/utils/empty-state.js';
-import { rowActionHtml } from '/utils/row-action.js';
+import { rowActionHtml, rowMenuHtml } from '/utils/row-action.js';
+import { installPopoverMenus } from '/utils/popover-menu.js';
 import { wireScrollFade } from '/utils/ux.js';
 import { wireTablist } from '/utils/tablist.js';
 import { attachSegmentIndicator } from '/utils/segment-indicator.js';
@@ -907,6 +908,25 @@ function patternFields(pattern = {}) {
  * Zusatzschichten darunter: Punkt, Symbol, Name, Uhrzeit, rechts "Bearbeiten"
  * und "Loeschen". Wer die Schichtart nicht aendern darf, liest in der
  * Metazeile, wem sie gehoert. */
+/**
+ * Bearbeiten und Loeschen einer Listenzeile als EIN Mehr-Knopf (Entscheidung
+ * 2026-10-07, utils/row-action.js). Hier standen je Zeile zwei Textkapseln,
+ * "Bearbeiten" und ein rot umrandetes "Loeschen" - fuenf Listen, in den
+ * Schichtarten sieben rote Rahmen untereinander, und unter 640px eine zweite
+ * Zeile nur fuer die zwei Knoepfe. Die Eintraege tragen dieselben
+ * data-Attribute wie die Knoepfe vorher; action() liest sie unveraendert.
+ */
+function editDeleteMenu({ key, name, edit, remove }) {
+  return '<span class="row-actions schedule-row-actions">' + rowMenuHtml({
+    id: `schedule-menu-${key}`,
+    label: t('common.moreActionsNamed', { name }),
+    items: [
+      { ...edit, icon: 'pencil', label: t('common.edit') },
+      { ...remove, icon: 'trash-2', label: t('schedule.delete'), danger: true },
+    ],
+  }) + '</span>';
+}
+
 function shiftTypeRow(type) {
   const editable = canEditType(type);
   const icon = type.icon ? `<i data-lucide="${esc(type.icon)}" class="schedule-type-icon" aria-hidden="true"></i>` : '';
@@ -916,8 +936,7 @@ function shiftTypeRow(type) {
     : t('schedule.typeOwnedBy', { user: userName(type.created_by) }));
   const meta = [clockLabel(type), owner].filter(Boolean).join(' · ');
   const actions = editable
-    ? '<span class="schedule-override-actions"><button type="button" class="btn btn--secondary" data-action="edit-shift-type" data-id="' + type.id + '" aria-label="' + esc(t('common.editNamed', { name })) + '">' + esc(t('common.edit')) + '</button>'
-      + '<button type="button" class="btn btn--danger-outline" data-action="delete-shift" data-id="' + type.id + '" aria-label="' + esc(t('common.deleteNamed', { name })) + '">' + esc(t('schedule.delete')) + '</button></span>'
+    ? editDeleteMenu({ key: `type-${type.id}`, name, edit: { action: 'edit-shift-type', id: type.id }, remove: { action: 'delete-shift', id: type.id } })
     : '';
   return `<div class="list-row schedule-type-row" data-shift-type="${type.id}"><span class="schedule-swatch" style="--schedule-color:${esc(type.color)}"></span>${icon}<div class="list-row__main"><span class="list-row__name">${esc(name)}</span><span class="list-row__meta">${esc(meta)}</span></div>${actions}</div>`;
 }
@@ -937,19 +956,54 @@ function shiftTypeFieldRow(field) {
 // lokale Aenderungen (hinzufuegen/entfernen/umsortieren/Overlay-Haken), die
 // das EINE "Speichern" des Dialogs mitschreibt (saveShiftTypeEdit()). Bis R17
 // trug der Abschnitt einen zweiten Speichern-Knopf neben dem der Angaben.
+/** Pure: die Felder des Haushalts, die an dieser Schichtart (noch) nicht haengen. */
+function availableTypeFields(customFields, attachedIds) {
+  const taken = new Set([...attachedIds].map(Number));
+  return customFields.filter((field) => !taken.has(Number(field.id)));
+}
+
 function shiftTypeFieldsEditor(type) {
-  const attachedIds = new Set(type.fields.map((field) => field.id));
-  const available = state.customFields.filter((field) => !attachedIds.has(field.id));
+  const available = availableTypeFields(state.customFields, type.fields.map((field) => field.id));
   const rows = type.fields.map(shiftTypeFieldRow).join('');
-  const picker = available.length
-    ? '<div class="schedule-type-field-add">'
+  // DIE AUSWAHL STEHT IMMER IM MARKUP (#1775), ohne waehlbares Feld nur
+  // `hidden`. Vorher fehlte sie ganz, wenn alle Felder angehaengt waren - ein
+  // versehentlich entferntes Feld liess sich im selben Dialog nicht wieder
+  // anhaengen, weil es nichts gab, wohin es haette zurueckkehren koennen.
+  // syncTypeFieldPicker() fuehrt sie nach jedem Anhaengen und Entfernen nach.
+  const picker = '<div class="schedule-type-field-add" data-field-add' + (available.length ? '' : ' hidden') + '>'
       + '<select class="form-input" data-field-picker="' + type.id + '">' + available.map((field) => option(field.id, field.name)).join('') + '</select>'
       + '<button type="button" class="btn btn--secondary" data-action="add-type-field" data-id="' + type.id + '">' + esc(t('common.add')) + '</button>'
-      + '</div>' : '';
+      + '</div>';
   const body = '<div class="schedule-type-fields-rows" data-type-fields-rows="' + type.id + '">'
     + (rows || '<p class="u-meta">' + esc(t('schedule.noFieldsAttached')) + '</p>') + '</div>'
     + picker;
   return advancedSection(body, { label: t('schedule.attachedFields'), open: type.fields.length > 0 });
+}
+
+/* WAS "ENTFERNEN" MITNAHM, BRINGT "HINZUFUEGEN" ZURUECK (#1775, Review). Die
+ * Zeile traegt den Haken "Im Overlay zeigen"; wer ein Feld versehentlich
+ * entfernte und wieder anhaengte, bekam es ohne den Haken zurueck, und
+ * Speichern schrieb das fest - das Feld verschwand still aus Plan, Kalender
+ * und ICS. Gemerkt wird je Formular, also je geoeffnetem Dialog. */
+const removedOverlayState = new WeakMap();
+
+/**
+ * Zieht die Feld-Auswahl im Schichtart-Dialog auf den Stand der Zeilen nach:
+ * waehlbar ist jedes Feld des Haushalts, das gerade KEINE Zeile hat, in der
+ * Reihenfolge der Feldliste. Eine Quelle fuer beide Richtungen - ein
+ * angehaengtes Feld verlaesst die Auswahl, ein entferntes kehrt zurueck
+ * (#1775: vorher loeschte "Entfernen" nur die Zeile). Ohne waehlbares Feld
+ * ist die Auswahl `hidden`.
+ */
+function syncTypeFieldPicker(scope) {
+  const picker = scope?.querySelector('[data-field-picker]');
+  if (!picker) return;
+  const attached = [...scope.querySelectorAll('[data-type-field-row]')].map((row) => row.dataset.customFieldId);
+  const available = availableTypeFields(state.customFields, attached);
+  const keep = String(picker.value ?? '');
+  picker.replaceChildren();
+  picker.insertAdjacentHTML('beforeend', available.map((field) => option(field.id, field.name, String(field.id) === keep)).join(''));
+  picker.closest('[data-field-add]')?.toggleAttribute('hidden', available.length === 0);
 }
 
 // Ein Feld gehoert dem Haushalt, nicht einer Person - definiert einmal, an
@@ -961,16 +1015,18 @@ function shiftTypeFieldsEditor(type) {
 function customFieldRow(field) {
   const editable = canEditType(field);
   const actions = editable
-    ? '<span class="schedule-override-actions"><button type="button" class="btn btn--secondary" data-action="edit-custom-field" data-id="' + field.id + '">' + esc(t('common.edit')) + '</button>'
-      + '<button type="button" class="btn btn--danger-outline" data-action="delete-custom-field" data-id="' + field.id + '">' + esc(t('schedule.delete')) + '</button></span>'
+    ? editDeleteMenu({ key: `field-${field.id}`, name: field.name, edit: { action: 'edit-custom-field', id: field.id }, remove: { action: 'delete-custom-field', id: field.id } })
     : '';
   return '<div class="list-row schedule-custom-field-row"><div class="list-row__main"><span class="list-row__name">' + esc(field.name) + '</span></div>' + actions + '</div>';
 }
 
+// EIN VOLLER LEERZUSTAND JE SEITE (R18, 2026-10-07). "Eigene Felder" ist ein
+// Nebenabschnitt unter den Schichtarten: sein Kopf nennt den Kontext, also
+// traegt er die kompakte Form (ein Satz, der Anlege-Weg darunter) - nicht ein
+// zweites Zeichen mit zweiter Ueberschrift unter der Liste.
 function emptyCustomFieldsState() {
   return emptyStateHTML({
-    icon: 'list-plus',
-    title: t('schedule.emptyCustomFieldsTitle'),
+    compact: true,
     description: t('schedule.emptyCustomFieldsDescription'),
     actions: readOnly() ? [] : [{ label: t('schedule.createCustomField'), icon: 'plus', tone: 'secondary', attrs: { 'data-action': 'open-create-custom-field' } }],
   });
@@ -1067,9 +1123,8 @@ function patternRow(pattern) {
     : '';
   const meta = userName(pattern.user_id);
   const actions = writable
-    ? '<span class="schedule-override-actions"><button type="button" class="btn btn--secondary" data-action="edit-pattern" data-id="' + pattern.id + '" aria-label="' + esc(t('common.editNamed', { name: pattern.name })) + '">' + esc(t('common.edit')) + '</button>'
-      + '<button type="button" class="btn btn--danger-outline" data-action="delete-pattern" data-id="' + pattern.id + '" aria-label="' + esc(t('common.deleteNamed', { name: pattern.name })) + '">' + esc(t('schedule.delete')) + '</button></span>'
-    : '<span class="schedule-override-actions"><button type="button" class="btn btn--secondary" data-action="edit-pattern" data-id="' + pattern.id + '" aria-label="' + esc(t('common.showDetails')) + ': ' + esc(pattern.name) + '">' + esc(t('common.showDetails')) + '</button></span>';
+    ? editDeleteMenu({ key: `pattern-${pattern.id}`, name: pattern.name, edit: { action: 'edit-pattern', id: pattern.id }, remove: { action: 'delete-pattern', id: pattern.id } })
+    : '<span class="row-actions schedule-row-actions">' + rowActionHtml({ icon: 'eye', action: 'edit-pattern', label: t('common.showDetails') + ': ' + pattern.name, attrs: { 'data-id': pattern.id } }) + '</span>';
   return `<div class="list-row schedule-pattern-row" data-pattern-row="${pattern.id}"><div class="list-row__main"><span class="list-row__name">${esc(pattern.name)}${winsBadge}</span><span class="list-row__meta">${esc(meta)}</span></div>${actions}</div>`;
 }
 
@@ -1160,10 +1215,16 @@ function rangeDifference(oldFrom, oldTo, newFrom, newTo) {
 // Dieselbe Grammatik wie die Muster- und Schichtarten-Leerzustaende
 // (emptyStateHTML) statt eines blossen Absatzes - die drei Tabs derselben
 // Seite sollen sich wie ein Modul lesen, nicht wie drei verschiedene.
+//
+// KOMPAKT (R18, 2026-10-07): in der Planung standen drei volle Leerzustaende
+// untereinander (Schichtplaene, Ausnahmen, Zusatzschichten) - dreimal
+// dasselbe Zeichen, drei Ueberschriften unter drei Abschnittskoepfen. Der
+// volle gehoert dem Hauptabschnitt (emptyPatternState); Ausnahmen und
+// Zusatzschichten sind Nebenabschnitte und sagen es in einem Satz, mit ihrem
+// Anlege-Weg darunter.
 function emptyOverrideState() {
   return emptyStateHTML({
-    icon: 'calendar-clock',
-    title: t('schedule.emptyOverridesTitle'),
+    compact: true,
     description: t('schedule.emptyOverridesDescription'),
     action: readOnly() ? null : { label: t('schedule.createOverride'), icon: 'plus', tone: 'secondary', attrs: { 'data-action': 'open-create-override' } },
   });
@@ -1179,7 +1240,12 @@ function overrideRows() {
     const meta = [userName(group.user_id), typeLabel, group.note].filter(Boolean).join(' · ');
     const label = group.from === group.to ? formatDate(group.from) : `${formatDate(group.from)} - ${formatDate(group.to)}`;
     const actions = canWrite(group.user_id)
-      ? '<span class="schedule-override-actions"><button type="button" class="btn btn--secondary" data-action="edit-override" data-from="' + esc(group.from) + '" data-user-id="' + group.user_id + '">' + esc(t('common.edit')) + '</button><button type="button" class="btn btn--danger-outline" data-action="delete-override-range" data-from="' + esc(group.from) + '" data-to="' + esc(group.to) + '" data-user-id="' + group.user_id + '">' + esc(t('schedule.delete')) + '</button></span>'
+      ? editDeleteMenu({
+        key: `override-${group.user_id}-${group.from}`,
+        name: label,
+        edit: { action: 'edit-override', attrs: { 'data-from': group.from, 'data-user-id': group.user_id } },
+        remove: { action: 'delete-override-range', attrs: { 'data-from': group.from, 'data-to': group.to, 'data-user-id': group.user_id } },
+      })
       : '';
     const icon = type?.icon ? '<i data-lucide="' + esc(type.icon) + '" class="schedule-type-icon" aria-hidden="true"></i>' : '';
     return '<div class="list-row schedule-override"><span class="schedule-swatch" style="--schedule-color:' + esc(swatchColor) + '"></span>' + icon + '<div class="list-row__main"><span class="list-row__name">' + esc(label) + '</span><span class="list-row__meta">' + esc(meta) + '</span></div>' + actions + '</div>';
@@ -1197,8 +1263,7 @@ function extraBadge() {
 
 function emptyExtraShiftsState() {
   return emptyStateHTML({
-    icon: 'calendar-clock',
-    title: t('schedule.emptyExtraShiftsTitle'),
+    compact: true,
     description: t('schedule.emptyExtraShiftsDescription'),
     action: readOnly() ? null : { label: t('schedule.addExtraShift'), icon: 'plus', tone: 'secondary', attrs: { 'data-action': 'open-create-extra' } },
   });
@@ -1246,9 +1311,13 @@ function extraRows() {
     const meta = [userName(group.user_id), typeLabel, group.note].filter(Boolean).join(' · ');
     const label = group.from === group.to ? formatDate(group.from) : `${formatDate(group.from)} - ${formatDate(group.to)}`;
     const icon = type?.icon ? '<i data-lucide="' + esc(type.icon) + '" class="schedule-type-icon" aria-hidden="true"></i>' : '';
-    const ids = esc(group.ids.join(','));
     const actions = canWrite(group.user_id)
-      ? '<span class="schedule-override-actions"><button type="button" class="btn btn--secondary" data-action="edit-extra-range" data-ids="' + ids + '">' + esc(t('common.edit')) + '</button><button type="button" class="btn btn--danger-outline" data-action="delete-extra-range" data-ids="' + ids + '" data-user-id="' + group.user_id + '" data-from="' + esc(group.from) + '" data-to="' + esc(group.to) + '">' + esc(t('schedule.delete')) + '</button></span>'
+      ? editDeleteMenu({
+        key: `extra-${group.ids.join('-')}`,
+        name: label,
+        edit: { action: 'edit-extra-range', attrs: { 'data-ids': group.ids.join(',') } },
+        remove: { action: 'delete-extra-range', attrs: { 'data-ids': group.ids.join(','), 'data-user-id': group.user_id, 'data-from': group.from, 'data-to': group.to } },
+      })
       : '';
     return '<div class="list-row schedule-override"><span class="schedule-swatch" style="--schedule-color:' + esc(swatchColor) + '"></span>' + icon + extraBadge() + '<div class="list-row__main"><span class="list-row__name">' + esc(label) + '</span><span class="list-row__meta">' + esc(meta) + '</span></div>' + actions + '</div>';
   }).join('') + '</div>';
@@ -1936,6 +2005,8 @@ function renderShell() {
   // Leiste wird hier EINMAL gebaut; die Kapsel folgt sync()/Klick selbst.
   attachSegmentIndicator(root.querySelector('.schedule-tabs'));
   root.addEventListener('submit', submitForm);
+  // Die Mehr-Knoepfe der Listenzeilen (editDeleteMenu) - idempotent.
+  installPopoverMenus(root);
   root.addEventListener('click', (event) => {
     const actionButton = event.target.closest('[data-action]');
     if (actionButton) action({ currentTarget: actionButton });
@@ -2593,16 +2664,29 @@ function editorAction(button) {
     const field = state.customFields.find((item) => Number(item.id) === Number(picker.value));
     if (!field) return;
     container.querySelector('.u-meta')?.remove();
-    container.insertAdjacentHTML('beforeend', shiftTypeFieldRow({ ...field, show_in_overlay: false }));
-    picker.querySelector(`option[value="${field.id}"]`)?.remove();
+    // Ein Feld, das in DIESEM Dialog entfernt wurde, kommt mit seinem Haken
+    // zurueck (removedOverlayState); ein neues beginnt ohne.
+    const overlay = removedOverlayState.get(scope)?.get(String(field.id)) ?? false;
+    container.insertAdjacentHTML('beforeend', shiftTypeFieldRow({ ...field, show_in_overlay: overlay }));
+    syncTypeFieldPicker(scope);
     window.lucide?.createIcons({ el: container.parentElement });
+    // War das das letzte waehlbare Feld, ist die Auswahl samt diesem Knopf
+    // jetzt verborgen - der Fokus geht auf die neue Zeile statt ins Leere.
+    if (button.closest('[hidden]')) container.lastElementChild?.querySelector('[data-action="remove-type-field"]')?.focus();
     return;
   }
   if (kind === 'remove-type-field') {
     const row = button.closest('[data-type-field-row]');
     const container = row?.closest('[data-type-fields-rows]');
+    const scope = button.closest('form');
+    if (row && scope) {
+      if (!removedOverlayState.has(scope)) removedOverlayState.set(scope, new Map());
+      removedOverlayState.get(scope).set(String(row.dataset.customFieldId), Boolean(row.querySelector('[data-show-in-overlay]')?.checked));
+    }
     row?.remove();
     if (container && !container.children.length) container.insertAdjacentHTML('beforeend', '<p class="u-meta">' + esc(t('schedule.noFieldsAttached')) + '</p>');
+    // Das entfernte Feld kehrt in die Auswahl zurueck (#1775).
+    syncTypeFieldPicker(scope);
     return;
   }
   // Tastaturbedienbarer Reorder-Pfad neben dem Ziehen ueber makeSortable()
@@ -3259,4 +3343,4 @@ export async function update({ path } = {}) {
 // bereits pur bzw. nehmen ihre Eingabe jetzt als Parameter statt sie fest aus
 // `state` zu lesen - ein Test kann so echte Tage hineingeben und das Ergebnis
 // pruefen, statt nur zu belegen, dass der Funktionsname im Quelltext steht.
-export const __test = { shiftTypeRow, patternRow, patternDaysEditorHtml, patternSaveOrder, initialOverviewSelection, renderOverview, renderToday, overviewLaneHeader, planningPanel, scheduleFabIntent, renderStatistics, patternFields, formField, shiftFields, reminderOffsetField, emptyShiftTypesState, emptyPatternState, emptyOverrideState, emptyExtraShiftsState, emptyCustomFieldsState, customFieldsSection, scheduleState: () => state, userOptions, setOwnerContext, overrideGroups, extraGroups, patternsInMemberOrder, rangeDifference, setShiftIconButtonIcon, overtimeInfo, sameFieldValues, overlayMeta, buildOverviewLanes, normalizeOverviewSelection, computeActiveHours, collapsedMinutes, isOvernightEntry, touchesVisibleDay, overviewFetchRange, patternDaysExceedingCycleLength, scheduleErrorMessage, cycleDayNextDate, cycleDayHeaderLabel, windowsOverlap, findOverlappingActivePattern, resolveWinningPatternId, scheduleEntryMatchKey };
+export const __test = { availableTypeFields, shiftTypeFieldsEditor, syncTypeFieldPicker, editorAction, shiftTypeRow, patternRow, patternDaysEditorHtml, patternSaveOrder, initialOverviewSelection, renderOverview, renderToday, overviewLaneHeader, planningPanel, scheduleFabIntent, renderStatistics, patternFields, formField, shiftFields, reminderOffsetField, emptyShiftTypesState, emptyPatternState, emptyOverrideState, emptyExtraShiftsState, emptyCustomFieldsState, customFieldsSection, scheduleState: () => state, userOptions, setOwnerContext, overrideGroups, extraGroups, patternsInMemberOrder, rangeDifference, setShiftIconButtonIcon, overtimeInfo, sameFieldValues, overlayMeta, buildOverviewLanes, normalizeOverviewSelection, computeActiveHours, collapsedMinutes, isOvernightEntry, touchesVisibleDay, overviewFetchRange, patternDaysExceedingCycleLength, scheduleErrorMessage, cycleDayNextDate, cycleDayHeaderLabel, windowsOverlap, findOverlappingActivePattern, resolveWinningPatternId, scheduleEntryMatchKey };
