@@ -164,6 +164,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   memory, and some 25 seconds of background work on one core spread over the first requests
   after a start. The files themselves are unchanged. `STATIC_BROTLI=off` restores the previous
   behaviour.
+- **Recipes mirrored from a Norwegian Mealie or Tandoor sort into shopping categories.** The
+  keyword list that guesses a category from an ingredient's name now knows Norwegian words as
+  well as German and English, so "hvetemel" lands under baked goods and "oppvaskmiddel" under
+  household instead of everything ending up under "Other". Matching stays whole-word, so a
+  compound such as "kyllinglår" still falls through unless it is listed on its own.
 
 ### Fixed
 
@@ -231,6 +236,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the three light circles of the app icon - and it no longer changes with the theme.
 - **A confirmation without an explanation has no empty gap.** Dialogs such as "Log out of this
   device?" showed an empty band between two hairlines, between the question and its buttons.
+- **Norwegian Bokmål reads more naturally** A second pass over the app
+  and the installer after using them day to day: one word for a shift ("vakt"), a reminder
+  ("påminnelse") and a tablet ("nettbrett") throughout, "container" and "image" for Docker
+  instead of literal translations, and singular forms for a count of one instead of "(er)".
 
 ## [2.75.0] - 2026-10-07
 
