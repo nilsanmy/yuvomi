@@ -236,7 +236,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the three light circles of the app icon - and it no longer changes with the theme.
 - **A confirmation without an explanation has no empty gap.** Dialogs such as "Log out of this
   device?" showed an empty band between two hairlines, between the question and its buttons.
-- **Norwegian Bokmål reads more naturally** A second pass over the app
+- **Norwegian Bokmål reads more naturally*.* A second pass over the app
   and the installer after using them day to day: one word for a shift ("vakt"), a reminder
   ("påminnelse") and a tablet ("nettbrett") throughout, "container" and "image" for Docker
   instead of literal translations, and singular forms for a count of one instead of "(er)".
