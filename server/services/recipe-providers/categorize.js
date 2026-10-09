@@ -24,23 +24,23 @@ const KEYWORDS = {
     'basil', 'basilikum', 'parsley', 'petersilie', 'mushroom', 'pilz', 'løk', 'rødløk',
     'vårløk', 'hvitløk', 'potet', 'poteter', 'gulrot', 'gulrøtter', 'tomat', 'tomater',
     'agurk', 'brokkoli', 'blomkål', 'kål', 'purre', 'sopp', 'sitron', 'eple', 'epler',
-    'banan', 'bananer', 'frukt', 'grønnsaker','persille', 'koriander', 'ingefær'
+    'banan', 'bananer', 'frukt', 'grønnsaker', 'persille', 'koriander', 'ingefær',
   ],
   'Backwaren': [
     'flour', 'mehl', 'bread', 'brot', 'baking powder', 'backpulver', 'yeast',
     'hefe', 'bun', 'brötchen', 'tortilla', 'noodle', 'nudel', 'pasta', 'mel',
-    'hvetemel', 'brød', 'rundstykker', 'gjær', 'bakepulver', 'nudler', 'spaghetti'
+    'hvetemel', 'brød', 'rundstykker', 'gjær', 'bakepulver', 'nudler', 'spaghetti',
   ],
   'Milchprodukte': [
     'milk', 'milch', 'cheese', 'käse', 'butter', 'cream', 'sahne', 'yogurt',
     'joghurt', 'egg', 'ei', 'eier', 'melk', 'lettmelk', 'helmelk', 'ost',
-    'smør', 'fløte', 'matfløte', 'kremfløte', 'rømme', 'yoghurt'
+    'smør', 'fløte', 'matfløte', 'kremfløte', 'rømme', 'yoghurt',
   ],
   'Fleisch & Fisch': [
     'chicken', 'hähnchen', 'huhn', 'beef', 'rind', 'pork', 'schwein', 'fish',
     'fisch', 'salmon', 'lachs', 'shrimp', 'garnele', 'bacon', 'speck', 'sausage',
     'wurst', 'meat', 'fleisch', 'kylling', 'kyllingfilet', 'kjøtt', 'kjøttdeig',
-    'svinekjøtt', 'storfe', 'fisk', 'laks', 'torsk', 'reker', 'pølse', 'pølser', 'skinke'
+    'svinekjøtt', 'storfe', 'fisk', 'laks', 'torsk', 'reker', 'pølse', 'pølser', 'skinke',
   ],
   'Tiefkühl': ['frozen', 'tiefkühl', 'tiefgefroren', 'ice cream', 'eis', 'frossen', 'frosne', 'fryst'],
   'Getränke': ['juice', 'saft', 'wine', 'wein', 'beer', 'bier', 'water', 'wasser', 'soda', 'cola', 'vin', 'øl', 'vann', 'brus'],
