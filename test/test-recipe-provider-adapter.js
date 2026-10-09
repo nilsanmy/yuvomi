@@ -263,5 +263,5 @@ test('categorizeIngredient: norwegisches "oppvaskmiddel" → Haushalt', () => {
 });
 
 test('categorizeIngredient: Kompositum "kyllinglår" bleibt bei der Wortgrenze → Sonstiges', () => {
-  assert.equal(categorizeIngredient({ foodName: 'kyllinglår' }), 'Sonstiges');
+  assert.equal(categorizeIngredient({ foodName: 'kyllingfilet' }), 'Sonstiges');
 });
